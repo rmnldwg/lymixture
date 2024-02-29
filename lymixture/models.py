@@ -499,14 +499,14 @@ class LymphMixture:
         self,
         t_stage: str,
         log: bool = True,
-        marginalize_components: bool = False,
+        marginalize: bool = False,
     ) -> np.ndarray:
         """Compute the (log-)likelihood of all patients under the mixture model.
 
         This is essentially the (log-)likelihood of all patients given the individual
         components, but weighted by the mixture coefficients.
 
-        If ``marginalize_components`` is set to ``True``, the likelihoods are summed
+        If ``marginalize`` is set to ``True``, the likelihoods are summed
         over the components, effectively marginalizing the components out of the
         likelihoods.
         """
@@ -518,8 +518,31 @@ class LymphMixture:
         else:
             llh = full_mixture_coefs * component_patient_likelihood
 
-        if marginalize_components:
+        if marginalize:
             return np.logaddexp.reduce(llh, axis=0) if log else np.sum(llh, axis=0)
+
+        return llh
+
+
+    def incomplete_data_likelihood(
+        self,
+        t_stage: str | None = None,
+        log: bool = True,
+    ) -> float:
+        """Compute the incomplete data likelihood of the model."""
+        if t_stage is None:
+            t_stages = self.t_stages
+        else:
+            t_stages = [t_stage]
+
+        llh = 0 if log else 1.0
+        for t in t_stages:
+            llhs = self.comp_patient_mixture_likelihood(t, log, marginalize=True)
+
+            if log:
+                llh += np.sum(llhs)
+            else:
+                llh *= np.prod(llhs)
 
         return llh
 
