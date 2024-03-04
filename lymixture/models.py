@@ -6,28 +6,29 @@ likelihood from the components and subgroups in the data.
 
 import logging
 import warnings
-from typing import Any, Iterable, Iterator, Literal
+from typing import Any, Iterable, Literal
 
 import lymph
 import numpy as np
 import pandas as pd
-from lymph.diagnose_times import DistributionsUserDict
+from lymph import diagnose_times, modalities, types
+from lymph.helper import flatten, popfirst, unflatten_and_split
 
-from lymixture.utils import (
-    RESP_COL,
-    T_STAGE_COL,
-    join_with_responsibilities,
-    split_over_components,
-)
+from lymixture.utils import RESP_COL, T_STAGE_COL, join_with_responsibilities
 
 pd.options.mode.copy_on_write = True
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 logger = logging.getLogger(__name__)
 
 
-class LymphMixture:
-    """Class that handles the individual components of the mixture model."""
 
+class LymphMixture(
+    modalities.Composite,
+    diagnose_times.Composite,
+    types.Model,
+):
+    """Class that handles the individual components of the mixture model.
+    """
     def __init__(
         self,
         model_cls: type = lymph.models.Unilateral,
@@ -55,8 +56,12 @@ class LymphMixture:
         self._model_kwargs = model_kwargs
         self._mixture_coefs = None
 
-        self.subgroups: dict[str, self._model_cls] = {}
-        self.components: list[self._model_cls] = self._create_components(num_components)
+        self.subgroups: dict[str, model_cls] = {}
+        self.components: list[model_cls] = self._create_components(num_components)
+
+        max_time = model_kwargs.get("max_time", 10)
+        diagnose_times.Composite.__init__(self, max_time=max_time, is_distribution_leaf=False)
+        modalities.Composite.__init__(self, is_modality_leaf=False)
 
         logger.info(
             f"Created LymphMixtureModel based on {model_cls} model with "
@@ -81,6 +86,18 @@ class LymphMixture:
             index=range(len(self.components)),
             columns=self.subgroups.keys(),
         )
+
+
+    @property
+    def is_trinary(self) -> bool:
+        """Check if the model is trinary."""
+        if not (
+            all(sub.is_trinary for sub in self.subgroups.values())
+            == all(comp.is_trinary for comp in self.components)
+        ):
+            raise ValueError("Subgroups & components not all trinary or not all binary.")
+
+        return self.components[0].is_trinary
 
 
     def get_mixture_coefs(
@@ -132,7 +149,8 @@ class LymphMixture:
 
     def normalize_mixture_coefs(self) -> None:
         """Normalize the mixture coefficients to sum to one."""
-        self._mixture_coefs = self._mixture_coefs / self._mixture_coefs.sum(axis=0)
+        if getattr(self, "_mixture_coefs", None) is not None:
+            self._mixture_coefs = self._mixture_coefs / self._mixture_coefs.sum(axis=0)
 
 
     def repeat_mixture_coefs(self, t_stage: str, log: bool = True) -> np.ndarray:
@@ -148,116 +166,100 @@ class LymphMixture:
         return np.log(res) if log else res
 
 
-    def get_component_params(
+    def get_params(
         self,
-        param: str | None = None,
-        component: int | None = None,
         as_dict: bool = True,
-        flatten: bool = False,
-    ) -> float | Iterable[float] | dict[str, float]:
-        """Get the spread parameters of the individual mixture component models.
+        as_flat: bool = True,
+    ) -> Iterable[float] | dict[str, float]:
+        """Get the parameters of the mixture model.
 
-        If ``component`` is the index of one of the mixture model's components, this
-        method simply returns the call to :py:meth:`~lymph.models.Unilateral.get_params`
-        for the given component.
+        This includes both the parameters of the individual components and the mixture
+        coefficients. If a dictionary is returned (i.e. if ``as_dict`` is set to
+        ``True``), the components' parameters are nested under keys that simply
+        enumerate them. While the mixture coefficients are returned under keys of the
+        form ``<subgroup>from<component>_coef``.
 
-        When no ``component`` is specified and ``flatten`` is set to ``False``, a list
-        of calls to :py:meth:`~lymph.models.Unilateral.get_params` for all components is
-        returned. This may then contain only floats (if ``param`` is given), iterables
-        of parameters (when ``as_dict`` is set to ``False``), or dictionaries of the
-        component's parameters.
-
-        Lastly, when ``flatten`` is set to ``True``, a dictionary of the form
-        ``<idx>_<param>: value`` is created, where ``<idx>`` is the index of the
-        component and ``<param>`` is the name of the parameter. When ``param`` is not
-        given and ``as_dict`` is ``True``, this dictionary is returned. When ``param``
-        specifies a cluster parameter, the value of that parameter is returned. And
-        when ``param`` is not given and ``as_dict`` is ``False``, the values of the
-        dictionary are returned as an iterable.
-
-        Examples:
+        The parameters are returned as a dictionary if ``as_dict`` is True, and as
+        an iterable of floats otherwise. The argument ``as_flat`` determines whether
+        the returned dict is flat or nested.
 
         >>> graph_dict = {
-        ...     ("tumor", "T"): ["II"],
-        ...     ("lnl", "II"): [],
+        ...     ("tumor", "T"): ["II", "III"],
+        ...     ("lnl", "II"): ["III"],
+        ...     ("lnl", "III"): [],
         ... }
         >>> mixture = LymphMixture(
         ...     model_kwargs={"graph_dict": graph_dict},
         ...     num_components=2,
         ... )
-        >>> mixture.assign_component_params(0.1, 0.9)
-        >>> mixture.get_component_params()              # doctest: +NORMALIZE_WHITESPACE
-        [{'T_to_II_spread': 0.1},
-         {'T_to_II_spread': 0.9}]
-        >>> mixture.get_component_params(flatten=True)  # doctest: +NORMALIZE_WHITESPACE
-        {'0_T_to_II_spread': 0.1,
-         '1_T_to_II_spread': 0.9}
-        >>> mixture.get_component_params(param="T_to_II_spread")
-        [0.1, 0.9]
-        >>> mixture.get_component_params(param="T_to_II_spread", component=0)
-        0.1
-        >>> mixture.get_component_params(as_dict=False)
-        [dict_values([0.1]), dict_values([0.9])]
-        >>> mixture.get_component_params(as_dict=False, flatten=True)
-        dict_values([0.1, 0.9])
-        >>> mixture.get_component_params(param="0_T_to_II_spread", flatten=True)
-        0.1
+        >>> mixture.get_params(as_dict=True)     # doctest: +NORMALIZE_WHITESPACE
+        {'0_TtoII_spread': 0.0,
+         '0_TtoIII_spread': 0.0,
+         '0_IItoIII_spread': 0.0,
+         '1_TtoII_spread': 0.0,
+         '1_TtoIII_spread': 0.0,
+         '1_IItoIII_spread': 0.0}
         """
-        if component is not None:
-            return self.components[component].get_params(param=param, as_dict=as_dict)
-
-        if not flatten:
-            return [c.get_params(param=param, as_dict=as_dict) for c in self.components]
-
-        flat_params = {
-            f"{c}_{k}": v
-            for c, component in enumerate(self.components)
-            for k, v in component.get_params(as_dict=True).items()
-        }
-
-        if param is not None:
-            return flat_params[param]
-
-        return flat_params if as_dict else flat_params.values()
-
-
-    def assign_component_params(
-        self,
-        *new_params_args,
-        component: int | None = None,
-        **new_params_kwargs,
-    ) -> Iterator[float]:
-        """Assign new spread params to the component models.
-
-        If ``component`` is given, the arguments and keyword arguments are passed to the
-        corresponding component model's :py:meth:`~lymph.models.Unilateral.assign_params`
-        method.
-
-        Parameters can be set as positional arguments, in which case they are used up
-        one at a time by the individual component models. E.g., if each component has
-        two parameters, the first two positional arguments are used for the first
-        component, the next two for the second component, and so on.
-
-        If provided as keyword arguments, the keys are the parameter names expected by
-        the individual models, prefixed by the index of the component (e.g.
-        ``0_param1``, ``1_param1``, etc.). When no index is found, the parameter is set
-        for all components.
-        """
-        if component is not None:
-            return self.components[component].assign_params(
-                *new_params_args, **new_params_kwargs
-            )
-
-        params_for_components, global_params = split_over_components(
-            new_params_kwargs, num_components=len(self.components)
-        )
+        params = {}
         for c, component in enumerate(self.components):
-            component_params = {}
-            component_params.update(global_params)
-            component_params.update(params_for_components[c])
-            new_params_args, _ = component.assign_params(
-                *new_params_args, **component_params
-            )
+            params[str(c)] = component.get_params(as_flat=as_flat)
+
+            for label in self.subgroups:
+                params[f"{label}from{c}_coef"] = self.get_mixture_coefs(c, label)
+
+        if as_flat or not as_dict:
+            return flatten(params)
+
+        return params if as_dict else params.values()
+
+
+    def set_params(self, *args: float, **kwargs: float) -> tuple[float]:
+        """Assign new params to the component models.
+
+        This includes both the spread parameters for the component's models (if
+        provided as positional arguments, they are used up first), as well as the
+        mixture coefficients for the subgroups.
+
+        Note:
+            After setting all parameters, the mixture coefficients are normalized and
+            may thus not be the same as the ones provided in the arguments.
+
+        >>> graph_dict = {
+        ...     ("tumor", "T"): ["II", "III"],
+        ...     ("lnl", "II"): ["III"],
+        ...     ("lnl", "III"): [],
+        ... }
+        >>> mixture = LymphMixture(
+        ...     model_kwargs={"graph_dict": graph_dict},
+        ...     num_components=2,
+        ... )
+        >>> mixture.set_params(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)
+        (0.7,)
+        >>> mixture.get_params(as_dict=True)   # doctest: +NORMALIZE_WHITESPACE
+        {'0_TtoII_spread': 0.1,
+         '0_TtoIII_spread': 0.2,
+         '0_IItoIII_spread': 0.3,
+         '1_TtoII_spread': 0.4,
+         '1_TtoIII_spread': 0.5,
+         '1_IItoIII_spread': 0.6}
+        """
+        kwargs, global_kwargs = unflatten_and_split(
+            kwargs, expected_keys=[str(c) for c, _ in enumerate(self.components)],
+        )
+
+        for component in self.components:
+            component_kwargs = global_kwargs.copy()
+            component_kwargs.update(kwargs.get(str(component), {}))
+            args = component.set_params(*args, **component_kwargs)
+
+        for label in self.subgroups:
+            for c, _ in enumerate(self.components):
+                first, args = popfirst(args)
+                value = global_kwargs.get(f"{label}from{c}_coef", first)
+                self.set_mixture_coefs(value, component=c, subgroup=label)
+
+        self.normalize_mixture_coefs()
+        return args
 
 
     def get_responsibilities(
@@ -348,55 +350,6 @@ class LymphMixture:
         max_resps = np.max(resps, axis=1)
         hard_resps = np.where(resps == max_resps[:,None], 1, 0)
         self.set_responsibilities(hard_resps)
-
-
-    @property
-    def diag_time_dists(self) -> DistributionsUserDict:
-        """Distributions over diagnose times of the mixture, delegated from components."""
-        return self.components[0].diag_time_dists
-
-
-    def update_modalities(
-        self,
-        new_modalities,
-        subgroup: str | None = None,
-        clear: bool = False,
-    ):
-        """Update the modalities of the mixture's subgroup models.
-
-        The subgroups' modalities are updated with the given ``new_modalities``. If
-        ``subgroup`` is given, only the modalities of that subgroup are updated. When
-        ``clear`` is set to ``True``, the existing modalities are cleared before
-        updating.
-        """
-        subgroup_keys = [subgroup] if subgroup is not None else self.subgroups.keys()
-
-        for key in subgroup_keys:
-            if clear:
-                self.subgroups[key].modalities.clear()
-            self.subgroups[key].modalities.update(new_modalities)
-
-
-    def update_diag_time_dists(
-        self,
-        new_diag_time_dists: DistributionsUserDict,
-        component: int | None = None,
-        clear: bool = False,
-    ):
-        """Update the diagnose time distributions of the mixture's components.
-
-        The diagnose time distributions of the components are updated with the given
-        ``new_diag_time_dists``. If ``component`` is given, only the diagnose time
-        distributions of that component are updated. When ``clear`` is set to ``True``,
-        the existing diagnose time distributions are cleared before updating.
-        """
-        comp_slice = slice(None) if component is None else component
-        components = self.components[comp_slice]
-
-        for component in components:
-            if clear:
-                component.diag_time_dists.clear()
-            component.diag_time_dists.update(new_diag_time_dists)
 
 
     def load_patient_data(
@@ -524,7 +477,7 @@ class LymphMixture:
         return llh
 
 
-    def incomplete_data_likelihood(
+    def _incomplete_data_likelihood(
         self,
         t_stage: str | None = None,
         log: bool = True,
@@ -547,7 +500,7 @@ class LymphMixture:
         return llh
 
 
-    def complete_data_likelihood(
+    def _complete_data_likelihood(
         self,
         t_stage: str | None = None,
         log: bool = True,
@@ -571,3 +524,41 @@ class LymphMixture:
                 llh *= np.prod(llhs ** resps)
 
         return llh
+
+
+    def likelihood(
+        self,
+        given_params: Iterable[float] | dict[str, float] | None = None,
+        log: bool = True,
+        complete: bool = True,
+    ) -> float:
+        """Compute the (in-)complete data likelihood of the model.
+
+        If ``complete`` is set to ``True``, the complete data likelihood is computed.
+        Otherwise, the incomplete data likelihood is computed.
+
+        The likelihood is computed for the ``given_params``. If no parameters are given,
+        the likelihood is computed for the current parameters of the model.
+
+        The likelihood is returned in log-space if ``log`` is set to ``True``.
+        """
+        try:
+            # all functions and methods called here should raise a ValueError if the
+            # given parameters are invalid...
+            if given_params is None:
+                pass
+            elif isinstance(given_params, dict):
+                self.set_params(**given_params)
+            else:
+                self.set_params(*given_params)
+        except ValueError:
+            return -np.inf if log else 0.
+
+        if complete:
+            return self._complete_data_likelihood(log=log)
+
+        return self._incomplete_data_likelihood(log=log)
+
+
+    def risk(self):
+        raise NotImplementedError
