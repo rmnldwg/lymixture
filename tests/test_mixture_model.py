@@ -7,7 +7,7 @@ from unittest import TestCase
 
 import numpy as np
 import pandas as pd
-from fixtures import MixtureModelFixture
+from fixtures import MixtureModelFixture, create_random_dist
 from lymph.models import Unilateral
 
 from lymixture import LymphMixture
@@ -47,7 +47,7 @@ class TestMixtureModel(MixtureModelFixture, TestCase):
         self.assertEqual(total_num_patients, len(self.patient_data))
 
 
-    def test_assign_responsibilities(self):
+    def test_set_responsibilities(self):
         """Test the assignment of responsibilities."""
         self.mixture_model.set_responsibilities(self.resp)
 
@@ -73,6 +73,65 @@ class TestMixtureModel(MixtureModelFixture, TestCase):
             self.resp[p_idx,c_idx],
             self.mixture_model.get_responsibilities(patient=p_idx, component=c_idx)
         )
+
+
+class DistributionsTestCase(MixtureModelFixture, unittest.TestCase):
+    """Test the functionality provided by the diagnose time distribution composite."""
+
+    def setUp(self) -> None:
+        """Create intermediate and helper objects for the tests."""
+        self.setup_rng(seed=42)
+        self.setup_mixture_model(
+            model_cls=Unilateral,
+            num_components=3,
+            graph_size="small",
+            load_data=True,
+        )
+        self.dists = {
+            "early": create_random_dist("frozen", max_time=10, rng=self.rng),
+            "late": create_random_dist("parametric", max_time=10, rng=self.rng),
+        }
+        self.mixture_model.set_distribution("early", self.dists["early"])
+        self.mixture_model.set_distribution("late", self.dists["late"])
+        return super().setUp()
+
+
+    def test_get_all_distributions(self) -> None:
+        """Check if the distributions are returned correctly."""
+        self.assertEqual(
+            self.dists.keys(),
+            self.mixture_model.get_all_distributions().keys(),
+        )
+        self.assertTrue(np.all(
+            self.dists["early"] == self.mixture_model.get_distribution("early").pmf
+        ))
+
+
+class GetAndSetParamsTestCase(MixtureModelFixture, unittest.TestCase):
+    """Check the setters and getters of the model params."""
+
+    def setUp(self) -> None:
+        self.setup_rng(seed=42)
+        self.setup_mixture_model(
+            model_cls=Unilateral,
+            num_components=3,
+            graph_size="small",
+            load_data=False,
+        )
+        self.dists = {
+            "early": create_random_dist("frozen", max_time=10, rng=self.rng),
+            "late": create_random_dist("parametric", max_time=10, rng=self.rng),
+        }
+        self.mixture_model.set_distribution("early", self.dists["early"])
+        self.mixture_model.set_distribution("late", self.dists["late"])
+        return super().setUp()
+
+
+    def test_set_params(self) -> None:
+        """Ensure that all params are set."""
+        params_to_set = {k: self.rng.uniform() for k in self.mixture_model.get_params()}
+        self.mixture_model.set_params(**params_to_set)
+        self.assertEqual(params_to_set, self.mixture_model.get_params())
 
 
 if __name__ == "__main__":

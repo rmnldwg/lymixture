@@ -6,7 +6,7 @@ likelihood from the components and subgroups in the data.
 
 import logging
 import warnings
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable
 
 import lymph
 import numpy as np
@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class LymphMixture(
-    modalities.Composite,
-    diagnose_times.Composite,
-    types.Model,
+    diagnose_times.Composite,   # NOTE: The order of inheritance must be the same as the
+    modalities.Composite,       #       order in which the respective __init__ methods
+    types.Model,                #       are called.
 ):
     """Class that handles the individual components of the mixture model.
     """
@@ -59,10 +59,11 @@ class LymphMixture(
         self.subgroups: dict[str, model_cls] = {}
         self.components: list[model_cls] = self._create_components(num_components)
 
-        max_time = model_kwargs.get("max_time", 10)
-        diagnose_times.Composite.__init__(self, max_time=max_time, is_distribution_leaf=False)
-        modalities.Composite.__init__(self, is_modality_leaf=False)
-
+        diagnose_times.Composite.__init__(
+            self,
+            distribution_children=dict(enumerate(self.components)),
+            is_distribution_leaf=False,
+        )
         logger.info(
             f"Created LymphMixtureModel based on {model_cls} model with "
             f"{num_components} components."
@@ -205,7 +206,7 @@ class LymphMixture(
             params[str(c)] = component.get_params(as_flat=as_flat)
 
             for label in self.subgroups:
-                params[f"{label}from{c}_coef"] = self.get_mixture_coefs(c, label)
+                params[str(c)].update({f"{label}_coef": self.get_mixture_coefs(c, label)})
 
         if as_flat or not as_dict:
             return flatten(params)
@@ -247,15 +248,14 @@ class LymphMixture(
             kwargs, expected_keys=[str(c) for c, _ in enumerate(self.components)],
         )
 
-        for component in self.components:
+        for c, component in enumerate(self.components):
             component_kwargs = global_kwargs.copy()
-            component_kwargs.update(kwargs.get(str(component), {}))
+            component_kwargs.update(kwargs.get(str(c), {}))
             args = component.set_params(*args, **component_kwargs)
 
-        for label in self.subgroups:
-            for c, _ in enumerate(self.components):
+            for label in self.subgroups:
                 first, args = popfirst(args)
-                value = global_kwargs.get(f"{label}from{c}_coef", first)
+                value = component_kwargs.get(f"{label}_coef", first)
                 self.set_mixture_coefs(value, component=c, subgroup=label)
 
         self.normalize_mixture_coefs()
@@ -376,6 +376,12 @@ class LymphMixture(
             )
             self.subgroups[label].load_patient_data(data, **kwargs)
 
+        modalities.Composite.__init__(
+            self,
+            modality_children=self.subgroups,
+            is_modality_leaf=False,
+        )
+
 
     @property
     def patient_data(self) -> pd.DataFrame:
@@ -383,48 +389,6 @@ class LymphMixture(
         return pd.concat([
             subgroup.patient_data for subgroup in self.subgroups.values()
         ], ignore_index=True)
-
-
-    def get_t_stage_intersection(
-        self, get_for: Literal["subgroups", "components"],
-    ) -> set[str]:
-        """Get the intersection of T-stages defined in subgroups or components.
-
-        This method returns those T-stages that are defined in all subgroups or all
-        components (depending on the value of ``get_for``).
-
-        In case of the subgroups, the T-stages are taken from the patient data. For the
-        components, the T-stages are taken from the diagnose time distributions.
-        """
-        if get_for == "subgroups":
-            generator = (
-                set(sub.patient_data[T_STAGE_COL].unique())
-                for sub in self.subgroups.values()
-            )
-        elif get_for == "components":
-            generator = (comp.diag_time_dists.keys() for comp in self.components)
-        else:
-            raise ValueError(
-                f"Unknown value for 'get_for': {get_for}. Must be 'subgroups' or "
-                "'components'."
-            )
-
-        t_stages = None
-        for item in generator:
-            if t_stages is None:
-                t_stages = item
-            else:
-                t_stages &= item
-        return t_stages
-
-
-    @property
-    def t_stages(self) -> set[str]:
-        """Compute the intersection of T-stages defined in subgroups and components."""
-        return (
-            self.get_t_stage_intersection("components")
-            & self.get_t_stage_intersection("subgroups")
-        )
 
 
     def comp_component_patient_likelihood(

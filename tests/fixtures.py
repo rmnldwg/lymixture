@@ -3,10 +3,12 @@ Fixtures and helpers for the unit tests.
 """
 import warnings
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 import numpy as np
 import pandas as pd
+import scipy as sp
+from lymph import diagnose_times, modalities
 
 from lymixture import LymphMixture
 from lymixture.utils import map_to_simplex
@@ -15,6 +17,11 @@ warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 SIMPLE_SUBSITE = ("tumor", "1", "simple_subsite")
 SUBSITE = ("tumor", "1", "subsite")
+MODALITIES = {
+    "CT": modalities.Clinical(spec=0.81, sens=0.86),
+    "FNA": modalities.Pathological(spec=0.95, sens=0.81),
+}
+RNG = np.random.default_rng(42)
 
 
 def get_graph(size: str = "large") -> dict[tuple[str, str], list[str]]:
@@ -52,6 +59,42 @@ def get_graph(size: str = "large") -> dict[tuple[str, str], list[str]]:
 def simplify_subsite(icd_code: str) -> str:
     """Only use the part of the ICD code before the decimal point."""
     return icd_code.split(".")[0]
+
+
+def _create_random_frozen_dist(
+    max_time: int,
+    rng: np.random.Generator = RNG,
+) -> np.ndarray:
+    """Create a random frozen diagnose time distribution."""
+    unnormalized = rng.random(size=max_time + 1)
+    return unnormalized / np.sum(unnormalized)
+
+def _create_random_parametric_dist(
+    max_time: int,
+    rng: np.random.Generator = RNG,
+) -> diagnose_times.Distribution:
+    """Create a binomial diagnose time distribution with random params."""
+    def _pmf(support: np.ndarray, p: float = rng.random()) -> np.ndarray:
+        return sp.stats.binom.pmf(support, p=p, n=max_time + 1)
+
+    return diagnose_times.Distribution(
+        distribution=_pmf,
+        max_time=max_time,
+    )
+
+def create_random_dist(
+    type_: str,
+    max_time: int,
+    rng: np.random.Generator = RNG,
+) -> np.ndarray | Callable:
+    """Create a random frozen or parametric distribution."""
+    if type_ == "frozen":
+        return _create_random_frozen_dist(max_time=max_time, rng=rng)
+
+    if type_ == "parametric":
+        return _create_random_parametric_dist(max_time=max_time, rng=rng)
+
+    raise ValueError(f"Unknown distribution type: {type_}")
 
 
 def get_patient_data(do_simplify_subsite: bool = True) -> pd.DataFrame:
