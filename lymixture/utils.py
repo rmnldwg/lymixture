@@ -19,7 +19,7 @@ from scipy.special import factorial
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 logger = logging.getLogger(__name__)
 
-RESP_COL = ("_mixture", "responsibility")
+RESP_COL = ("_model", "_responsibility")
 T_STAGE_COL = ("_model", "#", "t_stage")
 
 
@@ -120,8 +120,8 @@ def join_with_responsibilities(
         resps.fill(np.nan)
         resps = pd.DataFrame(resps, columns=mixture_columns)
 
-    if "_mixture" in patient_data:
-        del patient_data["_mixture"]
+    if RESP_COL in patient_data:
+        patient_data.drop(columns=RESP_COL, inplace=True)
 
     return patient_data.join(resps).reset_index()
 

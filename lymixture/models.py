@@ -72,21 +72,14 @@ class LymphMixture(
 
     def _create_components(self, num_components: int) -> list[Any]:
         """Initialize the component parameters and assignments."""
+        if num_components < 2:
+            raise ValueError(f"A mixture of {num_components} does not make sense.")
+
         components = []
         for _ in range(num_components):
             components.append(self._model_cls(**self._model_kwargs))
 
         return components
-
-
-    def _create_empty_mixture_coefs(self) -> pd.DataFrame:
-        nan_array = np.empty((len(self.components), len(self.subgroups)))
-        nan_array[:] = np.nan
-        return pd.DataFrame(
-            nan_array,
-            index=range(len(self.components)),
-            columns=self.subgroups.keys(),
-        )
 
 
     @property
@@ -99,6 +92,16 @@ class LymphMixture(
             raise ValueError("Subgroups & components not all trinary or not all binary.")
 
         return self.components[0].is_trinary
+
+
+    def _create_empty_mixture_coefs(self) -> pd.DataFrame:
+        nan_array = np.empty((len(self.components), len(self.subgroups)))
+        nan_array[:] = np.nan
+        return pd.DataFrame(
+            nan_array,
+            index=range(len(self.components)),
+            columns=self.subgroups.keys(),
+        )
 
 
     def get_mixture_coefs(
@@ -154,14 +157,25 @@ class LymphMixture(
             self._mixture_coefs = self._mixture_coefs / self._mixture_coefs.sum(axis=0)
 
 
-    def repeat_mixture_coefs(self, t_stage: str, log: bool = True) -> np.ndarray:
+    def repeat_mixture_coefs(
+        self,
+        t_stage: str | None = None,
+        log: bool = False,
+        subgroup: str | None = None,
+    ) -> np.ndarray:
         """Stretch the mixture coefficients to match the number of patients."""
         res = np.empty(shape=(0, len(self.components)))
-        for label, subgroup in self.subgroups.items():
-            num_patients = subgroup.diagnose_matrices[t_stage].shape[1]
+
+        if subgroup is not None:
+            subgroups = {subgroup: self.subgroups[subgroup]}
+        else:
+            subgroups = self.subgroups
+
+        for label, subgroup in subgroups.items():
+            has_t_stage = subgroup.patient_data[T_STAGE_COL] == t_stage
+            num_patients = has_t_stage.sum() if t_stage is not None else len(has_t_stage)
             res = np.vstack([
-                res,
-                np.tile(self.get_mixture_coefs(subgroup=label), (num_patients, 1))
+                res, np.tile(self.get_mixture_coefs(subgroup=label), (num_patients, 1))
             ])
 
         return np.log(res) if log else res
@@ -278,6 +292,10 @@ class LymphMixture(
 
         Omitting ``component`` or ``patient`` (or both) will return corresponding slices
         of the responsibility table.
+
+        The ``filter_by`` argument can be used to filter the responsibility table by
+        any ``filter_value`` in the patient data. Most commonly, this is used to filter
+        the responsibilities by T-stage.
         """
         if subgroup is not None:
             resp_table = self.subgroups[subgroup].patient_data
@@ -303,15 +321,17 @@ class LymphMixture(
         patient: int | None = None,
         subgroup: str | None = None,
         component: int | None = None,
-    ):
-        """Assign responsibilities to the model.
+    ) -> None:
+        """Assign ``new_responsibilities`` to the model.
 
-        They should have the shape ``(num_patients, num_components)`` and summing them
-        along the last axis should yield a vector of ones.
+        They should have the shape ``(num_patients, num_components)``, where
+        ``num_patients`` is either the total number of patients in the model or only
+        the number of patients in the ``subgroup`` (if that argument is not ``None``)
+        and summing them along the last axis should yield a vector of ones.
 
         Note that these responsibilities essentially become the latent variables
-        of the model if they are "hard", i.e. if they are either 0 or 1 and thus
-        represent a one-hot encoding of the component assignments.
+        of the model or the expectation values of the latent variables (depending on
+        whether or not they are "hardened", see :py:meth:`.harden_responsibilities`).
         """
         pat_slice = slice(None) if patient is None else patient
         comp_slice = (*RESP_COL, slice(None) if component is None else component)
@@ -329,7 +349,7 @@ class LymphMixture(
             if patient is not None:
                 if patient_idx > patient:
                     sub_data.loc[pat_slice,comp_slice] = new_responsibilities
-                    return
+                    break
 
             else:
                 sub_resp = new_responsibilities[:len(sub_data)]
@@ -391,43 +411,56 @@ class LymphMixture(
         ], ignore_index=True)
 
 
-    def comp_component_patient_likelihood(
+    def component_patient_likelihoods(
         self,
-        t_stage: str,
+        t_stage: str | None = None,
         log: bool = True,
     ) -> np.ndarray:
         """Compute the (log-)likelihood of all patients, given the components.
 
         The returned array has shape ``(num_components, num_patients)`` and contains
-        the likelihood of each patient under each component. If ``log`` is set to
-        ``True``, the likelihoods are returned in log-space.
+        the likelihood of each patient with ``t_stage`` under each component. If ``log``
+        is set to ``True``, the likelihoods are returned in log-space.
         """
-        stacked_diag_matrices = np.hstack([
-            subgroup.diagnose_matrices[t_stage] for subgroup in self.subgroups.values()
-        ])
-        llhs = np.empty(shape=(stacked_diag_matrices.shape[1], len(self.components)))
-        for i, component in enumerate(self.components):
-            llhs[:,i] = component.comp_state_dist(t_stage=t_stage) @ stacked_diag_matrices
+        if t_stage is None:
+            t_stages = self.t_stages
+        else:
+            t_stages = [t_stage]
+
+        llhs = np.empty(shape=(0, len(self.components)))
+        for subgroup in self.subgroups.values():
+            sub_llhs = np.empty(shape=(len(subgroup.patient_data), len(self.components)))
+            for t in t_stages:
+                t_idx = subgroup.patient_data[T_STAGE_COL] == t
+                sub_llhs[t_idx] = np.stack([
+                    comp.state_dist(t) @ subgroup.diagnose_matrix(t).T
+                    for comp in self.components
+                ], axis=-1)
+            llhs = np.vstack([llhs, sub_llhs])
 
         return np.log(llhs) if log else llhs
 
 
-    def comp_patient_mixture_likelihood(
+
+
+    def patient_mixture_likelihoods(
         self,
-        t_stage: str,
+        t_stage: str | None = None,
         log: bool = True,
         marginalize: bool = False,
     ) -> np.ndarray:
         """Compute the (log-)likelihood of all patients under the mixture model.
 
         This is essentially the (log-)likelihood of all patients given the individual
-        components, but weighted by the mixture coefficients.
+        components, but weighted by the mixture coefficients. This means that the
+        returned array when ``marginalize`` is set to ``False`` represents the
+        unnormalized expected responsibilities of the patients for the components.
 
         If ``marginalize`` is set to ``True``, the likelihoods are summed
         over the components, effectively marginalizing the components out of the
         likelihoods.
         """
-        component_patient_likelihood = self.comp_component_patient_likelihood(t_stage, log)
+        component_patient_likelihood = self.component_patient_likelihoods(t_stage, log)
         full_mixture_coefs = self.repeat_mixture_coefs(t_stage, log)
 
         if log:
@@ -454,7 +487,7 @@ class LymphMixture(
 
         llh = 0 if log else 1.0
         for t in t_stages:
-            llhs = self.comp_patient_mixture_likelihood(t, log, marginalize=True)
+            llhs = self.patient_mixture_likelihoods(t, log, marginalize=True)
 
             if log:
                 llh += np.sum(llhs)
@@ -477,7 +510,7 @@ class LymphMixture(
 
         llh = 0 if log else 1.0
         for t in t_stages:
-            llhs = self.comp_patient_mixture_likelihood(t, log)
+            llhs = self.patient_mixture_likelihoods(t, log)
             resps = self.get_responsibilities(
                 filter_by=T_STAGE_COL, filter_value=t
             ).to_numpy()

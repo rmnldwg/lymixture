@@ -59,7 +59,7 @@ def compute_cluster_state_probabilty_matrices(
     mu_sum = np.zeros(shape=(n_K, n_t, n_V))
     for k in range(n_clusters):
         k_model.assign_params(*cluster_params[k * n_p : (k + 1) * n_p])
-        evolved_model = k_model.comp_dist_evolution()
+        evolved_model = k_model.state_dist_evo()
         for t, t_stage in enumerate(k_model.t_stages):
             mu_sum[k][t] = k_model.diag_time_dists[t_stage].distribution @ evolved_model
     return mu_sum
