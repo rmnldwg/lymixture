@@ -372,6 +372,20 @@ class LymphMixture(
         self.set_responsibilities(hard_resps)
 
 
+    def exected_responsibilities(self) -> None:
+        """Compute the expectation value of the responsibilities.
+
+        This amounts to calling :py:meth:`.patient_mixture_likelihoods`, which gives
+        the likelihood for each patient under each component, weighted with the mixture
+        coefficients. Normalizing this via :py:meth:`.normalize_responsibilities`
+        yields the expectation value of the responsibilities.
+
+        This is essentially the E-step of the EM algorithm.
+        """
+        self.set_responsibilities(self.patient_mixture_likelihoods(log=False))
+        self.normalize_responsibilities()
+
+
     def load_patient_data(
         self,
         patient_data: pd.DataFrame,
@@ -411,7 +425,7 @@ class LymphMixture(
         ], ignore_index=True)
 
 
-    def component_patient_likelihoods(
+    def patient_component_likelihoods(
         self,
         t_stage: str | None = None,
         log: bool = True,
@@ -431,6 +445,7 @@ class LymphMixture(
         for subgroup in self.subgroups.values():
             sub_llhs = np.empty(shape=(len(subgroup.patient_data), len(self.components)))
             for t in t_stages:
+                # use the index to align the likelihoods with the patients
                 t_idx = subgroup.patient_data[T_STAGE_COL] == t
                 sub_llhs[t_idx] = np.stack([
                     comp.state_dist(t) @ subgroup.diagnose_matrix(t).T
@@ -439,8 +454,6 @@ class LymphMixture(
             llhs = np.vstack([llhs, sub_llhs])
 
         return np.log(llhs) if log else llhs
-
-
 
 
     def patient_mixture_likelihoods(
@@ -452,15 +465,16 @@ class LymphMixture(
         """Compute the (log-)likelihood of all patients under the mixture model.
 
         This is essentially the (log-)likelihood of all patients given the individual
-        components, but weighted by the mixture coefficients. This means that the
-        returned array when ``marginalize`` is set to ``False`` represents the
-        unnormalized expected responsibilities of the patients for the components.
+        components as computed by :py:meth:`.patient_component_likelihoods` , but
+        weighted by the mixture coefficients. This means that the returned array when
+        ``marginalize`` is set to ``False`` represents the unnormalized expected
+        responsibilities of the patients for the components.
 
         If ``marginalize`` is set to ``True``, the likelihoods are summed
         over the components, effectively marginalizing the components out of the
-        likelihoods.
+        likelihoods and yielding the incomplete data likelihood per patient.
         """
-        component_patient_likelihood = self.component_patient_likelihoods(t_stage, log)
+        component_patient_likelihood = self.patient_component_likelihoods(t_stage, log)
         full_mixture_coefs = self.repeat_mixture_coefs(t_stage, log)
 
         if log:
@@ -501,6 +515,7 @@ class LymphMixture(
         self,
         t_stage: str | None = None,
         log: bool = True,
+        comp_exp: bool = False,
     ) -> float:
         """Compute the complete data likelihood of the model."""
         if t_stage is None:
@@ -508,11 +523,15 @@ class LymphMixture(
         else:
             t_stages = [t_stage]
 
+        if comp_exp:
+            self.exected_responsibilities()
+
         llh = 0 if log else 1.0
         for t in t_stages:
             llhs = self.patient_mixture_likelihoods(t, log)
             resps = self.get_responsibilities(
-                filter_by=T_STAGE_COL, filter_value=t
+                filter_by=T_STAGE_COL,
+                filter_value=t,
             ).to_numpy()
 
             if log:
@@ -528,14 +547,19 @@ class LymphMixture(
         given_params: Iterable[float] | dict[str, float] | None = None,
         log: bool = True,
         complete: bool = True,
+        comp_exp: bool = False,
     ) -> float:
         """Compute the (in-)complete data likelihood of the model.
 
         If ``complete`` is set to ``True``, the complete data likelihood is computed.
-        Otherwise, the incomplete data likelihood is computed.
+        Additionally, if ``comp_exp`` is set to ``True``, the expectation value of the
+        responsibilities is computed before the likelihood is computed.
+
+        When ``complete`` is set to ``False``, the incomplete data likelihood is
+        calculated and ``comp_exp`` is ignored.
 
         The likelihood is computed for the ``given_params``. If no parameters are given,
-        the likelihood is computed for the current parameters of the model.
+        the currently set parameters of the model are used.
 
         The likelihood is returned in log-space if ``log`` is set to ``True``.
         """
@@ -552,7 +576,7 @@ class LymphMixture(
             return -np.inf if log else 0.
 
         if complete:
-            return self._complete_data_likelihood(log=log)
+            return self._complete_data_likelihood(log=log, comp_exp=comp_exp)
 
         return self._incomplete_data_likelihood(log=log)
 

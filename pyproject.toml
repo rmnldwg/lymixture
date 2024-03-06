@@ -19,7 +19,7 @@ dependencies = [
     "numpy < 2",
     "scipy < 2",
     "pandas < 3",
-    "lymph-model >= 1.0.0.rc1",
+    "lymph-model >= 1.0.0.rc2",
     # I think these packages should not be depedencies...
     "emcee < 4",
     "lyscripts >= 1.0.0.a0",

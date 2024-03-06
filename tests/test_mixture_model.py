@@ -147,19 +147,21 @@ class LikelihoodsTestCase(MixtureModelFixture, unittest.TestCase):
         )
         self.mixture_model.set_modality("max_llh", spec=1., sens=1.)
         self.dists = {
-            "early": create_random_dist("frozen", max_time=10, rng=self.rng),
+            "early": create_random_dist("parametric", max_time=10, rng=self.rng),
             "late": create_random_dist("parametric", max_time=10, rng=self.rng),
         }
         self.mixture_model.set_distribution("early", self.dists["early"])
         self.mixture_model.set_distribution("late", self.dists["late"])
         params_to_set = {k: self.rng.uniform() for k in self.mixture_model.get_params()}
+        params_to_set["early_p"] = 0.
+        params_to_set["late_p"] = 1.
         self.mixture_model.set_params(**params_to_set)
         return super().setUp()
 
 
     def test_component_patient_likelihoods(self) -> None:
         """Test the likelihoods per patient and per component."""
-        llhs = self.mixture_model.component_patient_likelihoods()
+        llhs = self.mixture_model.patient_component_likelihoods(log=False)
         self.assertTrue(np.all(llhs >= 0))
         self.assertTrue(np.all(llhs <= 1))
         self.assertEqual(llhs.shape, (len(self.patient_data), self.num_components))
