@@ -3,7 +3,6 @@ Test the functionality of the mixture model class.
 """
 import unittest
 import warnings
-from unittest import TestCase
 
 import numpy as np
 import pandas as pd
@@ -11,12 +10,12 @@ from fixtures import MixtureModelFixture, create_random_dist
 from lymph.models import Unilateral
 
 from lymixture import LymphMixture
-from lymixture.utils import RESP_COL
+from lymixture.utils import RESP_COLS
 
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 
-class TestMixtureModel(MixtureModelFixture, TestCase):
+class TestMixtureModel(MixtureModelFixture):
     """Unit test the mixture model class."""
 
     def setUp(self) -> None:
@@ -49,33 +48,33 @@ class TestMixtureModel(MixtureModelFixture, TestCase):
 
     def test_set_responsibilities(self):
         """Test the assignment of responsibilities."""
-        self.mixture_model.set_responsibilities(self.resp)
+        self.mixture_model.set_resps(self.resp)
 
         stored_resp = np.empty(shape=(0, self.num_components))
         for subgroup in self.mixture_model.subgroups.values():
-            self.assertIn(RESP_COL, subgroup.patient_data)
+            self.assertIn(RESP_COLS, subgroup.patient_data)
             stored_resp = np.vstack([
-                stored_resp, subgroup.patient_data[RESP_COL].to_numpy()
+                stored_resp, subgroup.patient_data[RESP_COLS].to_numpy()
             ])
         np.testing.assert_array_equal(self.resp, stored_resp)
-        stored_resp = self.mixture_model.patient_data[RESP_COL]
+        stored_resp = self.mixture_model.patient_data[RESP_COLS]
         np.testing.assert_array_equal(self.resp, stored_resp)
-        stored_resp = self.mixture_model.get_responsibilities()
+        stored_resp = self.mixture_model.get_resps()
         np.testing.assert_array_equal(self.resp, stored_resp)
 
 
     def test_get_responsibilities(self):
         """Test accessing the responsibilities."""
-        self.mixture_model.set_responsibilities(self.resp)
+        self.mixture_model.set_resps(self.resp)
         p_idx = self.rng.integers(low=0, high=len(self.patient_data))
         c_idx = self.rng.integers(low=0, high=self.num_components)
         self.assertEqual(
             self.resp[p_idx,c_idx],
-            self.mixture_model.get_responsibilities(patient=p_idx, component=c_idx)
+            self.mixture_model.get_resps(patient=p_idx, component=c_idx)
         )
 
 
-class DistributionsTestCase(MixtureModelFixture, unittest.TestCase):
+class DistributionsTestCase(MixtureModelFixture):
     """Test the functionality provided by the diagnose time distribution composite."""
 
     def setUp(self) -> None:

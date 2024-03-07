@@ -1,6 +1,7 @@
 """
 Fixtures and helpers for the unit tests.
 """
+import unittest
 import warnings
 from pathlib import Path
 from typing import Callable, Literal
@@ -12,8 +13,6 @@ from lymph import diagnose_times, modalities
 
 from lymixture import LymphMixture
 from lymixture.utils import map_to_simplex
-
-warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 SIMPLE_SUBSITE = ("tumor", "1", "simple_subsite")
 SUBSITE = ("tumor", "1", "subsite")
@@ -110,8 +109,13 @@ def get_patient_data(do_simplify_subsite: bool = True) -> pd.DataFrame:
     return patient_data
 
 
-class MixtureModelFixture:
+class MixtureModelFixture(unittest.TestCase):
     """Fixture for the mixture model tests."""
+
+    def setUp(self) -> None:
+        """Create intermediate and helper objects for the tests."""
+        warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+        return super().setUp()
 
     def setup_rng(self, seed: int = 42):
         """Initialize random number generator with ``seed``."""
