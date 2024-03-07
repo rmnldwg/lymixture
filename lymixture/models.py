@@ -14,12 +14,7 @@ import pandas as pd
 from lymph import diagnose_times, modalities, types
 from lymph.helper import flatten, popfirst, unflatten_and_split
 
-from lymixture.utils import (
-    RESP_COLS,
-    T_STAGE_COL,
-    join_with_responsibilities,
-    normalize,
-)
+from lymixture.utils import RESP_COLS, T_STAGE_COL, join_with_resps, normalize
 
 pd.options.mode.copy_on_write = True
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
@@ -158,7 +153,7 @@ class LymphMixture(
     def normalize_mixture_coefs(self) -> None:
         """Normalize the mixture coefficients to sum to one."""
         if getattr(self, "_mixture_coefs", None) is not None:
-            self._mixture_coefs = self._mixture_coefs / self._mixture_coefs.sum(axis=0)
+            self._mixture_coefs = normalize(self._mixture_coefs, axis=0)
 
 
     def repeat_mixture_coefs(
@@ -292,7 +287,7 @@ class LymphMixture(
         component: int | None = None,
         t_stage: str | None = None,
         norm: bool = True,
-    ) -> pd.DataFrame:
+    ) -> float | pd.Series | pd.DataFrame:
         """Get the repsonsibility of a ``patient`` for a ``component``.
 
         The ``patient`` index enumerates all patients in the mixture model unless
@@ -307,21 +302,25 @@ class LymphMixture(
         the responsibilities by T-stage.
         """
         if subgroup is not None:
-            resp_table = self.subgroups[subgroup].patient_data
+            resp_table = self.subgroups[subgroup].patient_data[RESP_COLS]
         else:
-            resp_table = self.patient_data
+            resp_table = self.patient_data[RESP_COLS]
 
         if norm:
             # double transpose, because pandas has weird broadcasting behavior
-            resp_table = normalize(resp_table[RESP_COLS].T, axis=0).T
+            resp_table = normalize(resp_table.T, axis=0).T
 
         if t_stage is not None:
-            has_t_stage = resp_table[T_STAGE_COL] == t_stage
-            resp_table = resp_table[has_t_stage]
+            idx = resp_table["t_stage"] == t_stage
+            if patient is not None and not idx[patient]:
+                raise ValueError(f"Patient {patient} does not have T-stage {t_stage}.")
+            if patient is not None:
+                idx = patient
+        else:
+            idx = slice(None) if patient is None else patient
 
-        patient = patient or slice(None)
-        component = component or slice(None)
-        return resp_table.loc[patient,component]
+        component = slice(None) if component is None else component
+        return resp_table.loc[idx,component]
 
 
     def set_resps(
@@ -342,6 +341,9 @@ class LymphMixture(
         of the model or the expectation values of the latent variables (depending on
         whether or not they are "hardened", see :py:meth:`.harden_responsibilities`).
         """
+        if isinstance(new_responsibilities, pd.DataFrame):
+            new_responsibilities = new_responsibilities.to_numpy()
+
         pat_slice = slice(None) if patient is None else patient
         comp_slice = (*RESP_COLS, slice(None) if component is None else component)
 
@@ -384,7 +386,7 @@ class LymphMixture(
         for label, data in grouped:
             if label not in self.subgroups:
                 self.subgroups[label] = self._model_cls(**self._model_kwargs)
-            data = join_with_responsibilities(
+            data = join_with_resps(
                 data, num_components=len(self.components)
             )
             self.subgroups[label].load_patient_data(data, **kwargs)
@@ -462,7 +464,7 @@ class LymphMixture(
             llh = full_mixture_coefs * component_patient_likelihood
 
         if marginalize:
-            return np.logaddexp.reduce(llh, axis=0) if log else np.sum(llh, axis=0)
+            return np.logaddexp.reduce(llh, axis=1) if log else np.sum(llh, axis=1)
 
         return llh
 

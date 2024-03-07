@@ -141,7 +141,7 @@ def create_models(
     return models
 
 
-def join_with_responsibilities(
+def join_with_resps(
     patient_data: pd.DataFrame,
     num_components: int,
     resps: np.ndarray | None = None,
