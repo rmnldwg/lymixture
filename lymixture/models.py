@@ -14,7 +14,12 @@ import pandas as pd
 from lymph import diagnose_times, modalities, types
 from lymph.helper import flatten, popfirst, unflatten_and_split
 
-from lymixture.utils import RESP_COL, T_STAGE_COL, join_with_responsibilities
+from lymixture.utils import (
+    RESP_COLS,
+    T_STAGE_COL,
+    join_with_responsibilities,
+    normalize,
+)
 
 pd.options.mode.copy_on_write = True
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
@@ -27,8 +32,7 @@ class LymphMixture(
     modalities.Composite,       #       order in which the respective __init__ methods
     types.Model,                #       are called.
 ):
-    """Class that handles the individual components of the mixture model.
-    """
+    """Class that handles the individual components of the mixture model."""
     def __init__(
         self,
         model_cls: type = lymph.models.Unilateral,
@@ -57,7 +61,7 @@ class LymphMixture(
         self._mixture_coefs = None
 
         self.subgroups: dict[str, model_cls] = {}
-        self.components: list[model_cls] = self._create_components(num_components)
+        self.components: list[model_cls] = self._init_components(num_components)
 
         diagnose_times.Composite.__init__(
             self,
@@ -70,7 +74,7 @@ class LymphMixture(
         )
 
 
-    def _create_components(self, num_components: int) -> list[Any]:
+    def _init_components(self, num_components: int) -> list[Any]:
         """Initialize the component parameters and assignments."""
         if num_components < 2:
             raise ValueError(f"A mixture of {num_components} does not make sense.")
@@ -94,7 +98,7 @@ class LymphMixture(
         return self.components[0].is_trinary
 
 
-    def _create_empty_mixture_coefs(self) -> pd.DataFrame:
+    def _init_mixture_coefs(self) -> pd.DataFrame:
         nan_array = np.empty((len(self.components), len(self.subgroups)))
         nan_array[:] = np.nan
         return pd.DataFrame(
@@ -108,7 +112,7 @@ class LymphMixture(
         self,
         component: int | None = None,
         subgroup: str | None = None,
-        normalize: bool = True,
+        norm: bool = True,
     ) -> float | pd.Series | pd.DataFrame:
         """Get mixture coefficients for the given ``subgroup`` and ``component``.
 
@@ -120,9 +124,9 @@ class LymphMixture(
         along the component axis before being returned.
         """
         if getattr(self, "_mixture_coefs", None) is None:
-            self._mixture_coefs = self._create_empty_mixture_coefs()
+            self._mixture_coefs = self._init_mixture_coefs()
 
-        if normalize:
+        if norm:
             self.normalize_mixture_coefs()
 
         component = slice(None) if component is None else component
@@ -144,7 +148,7 @@ class LymphMixture(
         subgroup.
         """
         if getattr(self, "_mixture_coefs", None) is None:
-            self._mixture_coefs = self._create_empty_mixture_coefs()
+            self._mixture_coefs = self._init_mixture_coefs()
 
         component = slice(None) if component is None else component
         subgroup = slice(None) if subgroup is None else subgroup
@@ -163,7 +167,12 @@ class LymphMixture(
         log: bool = False,
         subgroup: str | None = None,
     ) -> np.ndarray:
-        """Stretch the mixture coefficients to match the number of patients."""
+        """Repeat mixture coefficients.
+
+        The result will match the number of patients with tumors of ``t_stage`` that
+        are in the specified ``subgroup`` (or all if it is set to ``None``). The
+        mixture coefficients are returned in log-space if ``log`` is set to ``True``.
+        """
         res = np.empty(shape=(0, len(self.components)))
 
         if subgroup is not None:
@@ -276,13 +285,13 @@ class LymphMixture(
         return args
 
 
-    def get_responsibilities(
+    def get_resps(
         self,
         patient: int | None = None,
         subgroup: str | None = None,
         component: int | None = None,
-        filter_by: tuple[str, str, str] | None = None,
-        filter_value: Any | None = None,
+        t_stage: str | None = None,
+        norm: bool = True,
     ) -> pd.DataFrame:
         """Get the repsonsibility of a ``patient`` for a ``component``.
 
@@ -302,20 +311,20 @@ class LymphMixture(
         else:
             resp_table = self.patient_data
 
-        if filter_by is not None and filter_value is not None:
-            filter_idx = resp_table[filter_by] == filter_value
-            resp_table = resp_table.loc[filter_idx]
+        if norm:
+            # double transpose, because pandas has weird broadcasting behavior
+            resp_table = normalize(resp_table[RESP_COLS].T, axis=0).T
 
-        pat_slice = slice(None) if patient is None else patient
-        comp_slice = (*RESP_COL, slice(None) if component is None else component)
-        res = resp_table.loc[pat_slice,comp_slice]
-        try:
-            return res[RESP_COL]
-        except (KeyError, IndexError):
-            return res
+        if t_stage is not None:
+            has_t_stage = resp_table[T_STAGE_COL] == t_stage
+            resp_table = resp_table[has_t_stage]
+
+        patient = patient or slice(None)
+        component = component or slice(None)
+        return resp_table.loc[patient,component]
 
 
-    def set_responsibilities(
+    def set_resps(
         self,
         new_responsibilities: float | np.ndarray,
         patient: int | None = None,
@@ -334,7 +343,7 @@ class LymphMixture(
         whether or not they are "hardened", see :py:meth:`.harden_responsibilities`).
         """
         pat_slice = slice(None) if patient is None else patient
-        comp_slice = (*RESP_COL, slice(None) if component is None else component)
+        comp_slice = (*RESP_COLS, slice(None) if component is None else component)
 
         if subgroup is not None:
             sub_data = self.subgroups[subgroup].patient_data
@@ -350,40 +359,10 @@ class LymphMixture(
                 if patient_idx > patient:
                     sub_data.loc[pat_slice,comp_slice] = new_responsibilities
                     break
-
             else:
                 sub_resp = new_responsibilities[:len(sub_data)]
                 sub_data.loc[pat_slice,comp_slice] = sub_resp
                 new_responsibilities = new_responsibilities[len(sub_data):]
-
-
-    def normalize_responsibilities(self) -> None:
-        """Normalize the responsibilities to sum to one."""
-        for label in self.subgroups:
-            sub_resps = self.get_responsibilities(subgroup=label)
-            self.set_responsibilities(sub_resps / sub_resps.sum(axis=1), subgroup=label)
-
-
-    def harden_responsibilities(self) -> None:
-        """Make the responsibilities hard, i.e. convert them to one-hot encodings."""
-        resps = self.get_responsibilities().to_numpy()
-        max_resps = np.max(resps, axis=1)
-        hard_resps = np.where(resps == max_resps[:,None], 1, 0)
-        self.set_responsibilities(hard_resps)
-
-
-    def exected_responsibilities(self) -> None:
-        """Compute the expectation value of the responsibilities.
-
-        This amounts to calling :py:meth:`.patient_mixture_likelihoods`, which gives
-        the likelihood for each patient under each component, weighted with the mixture
-        coefficients. Normalizing this via :py:meth:`.normalize_responsibilities`
-        yields the expectation value of the responsibilities.
-
-        This is essentially the E-step of the EM algorithm.
-        """
-        self.set_responsibilities(self.patient_mixture_likelihoods(log=False))
-        self.normalize_responsibilities()
 
 
     def load_patient_data(
@@ -494,72 +473,35 @@ class LymphMixture(
         log: bool = True,
     ) -> float:
         """Compute the incomplete data likelihood of the model."""
-        if t_stage is None:
-            t_stages = self.t_stages
-        else:
-            t_stages = [t_stage]
-
-        llh = 0 if log else 1.0
-        for t in t_stages:
-            llhs = self.patient_mixture_likelihoods(t, log, marginalize=True)
-
-            if log:
-                llh += np.sum(llhs)
-            else:
-                llh *= np.prod(llhs)
-
-        return llh
+        llhs = self.patient_mixture_likelihoods(t_stage, log, marginalize=True)
+        return np.sum(llhs) if log else np.prod(llhs)
 
 
     def _complete_data_likelihood(
         self,
         t_stage: str | None = None,
         log: bool = True,
-        comp_exp: bool = False,
     ) -> float:
         """Compute the complete data likelihood of the model."""
-        if t_stage is None:
-            t_stages = self.t_stages
-        else:
-            t_stages = [t_stage]
-
-        if comp_exp:
-            self.exected_responsibilities()
-
-        llh = 0 if log else 1.0
-        for t in t_stages:
-            llhs = self.patient_mixture_likelihoods(t, log)
-            resps = self.get_responsibilities(
-                filter_by=T_STAGE_COL,
-                filter_value=t,
-            ).to_numpy()
-
-            if log:
-                llh += np.sum(resps * llhs)
-            else:
-                llh *= np.prod(llhs ** resps)
-
-        return llh
+        llhs = self.patient_mixture_likelihoods(t_stage, log)
+        resps = self.get_resps(t_stage=t_stage).to_numpy()
+        return np.sum(resps * llhs) if log else np.prod(llhs ** resps)
 
 
     def likelihood(
         self,
         given_params: Iterable[float] | dict[str, float] | None = None,
+        given_resps: np.ndarray | None = None,
         log: bool = True,
-        complete: bool = True,
-        comp_exp: bool = False,
     ) -> float:
         """Compute the (in-)complete data likelihood of the model.
 
-        If ``complete`` is set to ``True``, the complete data likelihood is computed.
-        Additionally, if ``comp_exp`` is set to ``True``, the expectation value of the
-        responsibilities is computed before the likelihood is computed.
-
-        When ``complete`` is set to ``False``, the incomplete data likelihood is
-        calculated and ``comp_exp`` is ignored.
-
         The likelihood is computed for the ``given_params``. If no parameters are given,
         the currently set parameters of the model are used.
+
+        If responsibilities for each patient and component are given via ``given_resps``,
+        they are used to compute the complete data likelihood. Otherwise, the incomplete
+        data likelihood is computed, which marginalizes over the responsibilities.
 
         The likelihood is returned in log-space if ``log`` is set to ``True``.
         """
@@ -575,8 +517,9 @@ class LymphMixture(
         except ValueError:
             return -np.inf if log else 0.
 
-        if complete:
-            return self._complete_data_likelihood(log=log, comp_exp=comp_exp)
+        if given_resps is not None:
+            self.set_resps(given_resps)
+            return self._complete_data_likelihood(log=log)
 
         return self._incomplete_data_likelihood(log=log)
 

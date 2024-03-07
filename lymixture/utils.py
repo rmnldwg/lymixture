@@ -19,7 +19,7 @@ from scipy.special import factorial
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 logger = logging.getLogger(__name__)
 
-RESP_COL = ("_model", "_responsibility")
+RESP_COLS = ("_mixture", "responsibility")
 T_STAGE_COL = ("_model", "#", "t_stage")
 
 
@@ -56,6 +56,42 @@ def map_to_simplex(from_unit_cube: np.ndarray | list[float]) -> np.ndarray:
     """
     sorted_values = np.sort([0., *from_unit_cube, 1.])
     return sorted_values[1:] - sorted_values[:-1]
+
+
+def normalize(values: np.ndarray, axis: int) -> np.ndarray:
+    """Normalize ``values`` to sum to 1 along ``axis``."""
+    return values / np.sum(values, axis=axis)
+
+
+def harden(values: np.ndarray, axis: int) -> np.ndarray:
+    """Harden ``values`` to become a one-hot-encoding along the given ``axis``.
+
+    >>> values = np.array(
+    ...     [[0.1, 0.2, 0.7],
+    ...      [0.3, 0.4, 0.3]]
+    ... )
+    >>> harden(values, axis=1)   # doctest: +NORMALIZE_WHITESPACE
+    array([[0., 0., 1.],
+           [0., 1., 0.]])
+    >>> arr = np.array([[[0.84, 0.64, 0.3 , 0.23],
+    ...                  [0.18, 0.31, 0.23, 0.54],
+    ...                  [0.08, 0.05, 0.72, 0.09]],
+    ...                 [[0.33, 0.43, 0.28, 0.54],
+    ...                  [0.26, 0.48, 0.8 , 0.01],
+    ...                  [0.45, 0.09, 0.64, 0.11]]])
+    >>> harden(arr, axis=2)      # doctest: +NORMALIZE_WHITESPACE
+    array([[[1., 0., 0., 0.],
+            [0., 0., 0., 1.],
+            [0., 0., 1., 0.]],
+           [[0., 0., 0., 1.],
+            [0., 0., 1., 0.],
+            [0., 0., 1., 0.]]])
+    """
+    maxdim = len(values.shape) - 1
+    idx = np.argmax(values, axis=axis)                # one dimension less than `values`
+    one_hot = np.eye(values.shape[axis])[idx]         # right dimension, but wrong order
+    dim_sort = (*range(axis), maxdim, *range(axis, maxdim))
+    return one_hot.transpose(*dim_sort)               # right order
 
 
 def create_models(
@@ -112,7 +148,7 @@ def join_with_responsibilities(
 ) -> pd.DataFrame:
     """Join patient data with empty responsibilities (and reset index)."""
     mixture_columns = pd.MultiIndex.from_tuples([
-        (*RESP_COL, i) for i in range(num_components)
+        (*RESP_COLS, i) for i in range(num_components)
     ])
 
     if resps is None:
@@ -120,8 +156,8 @@ def join_with_responsibilities(
         resps.fill(np.nan)
         resps = pd.DataFrame(resps, columns=mixture_columns)
 
-    if RESP_COL in patient_data:
-        patient_data.drop(columns=RESP_COL, inplace=True)
+    if RESP_COLS in patient_data:
+        patient_data.drop(columns=RESP_COLS, inplace=True)
 
     return patient_data.join(resps).reset_index()
 
