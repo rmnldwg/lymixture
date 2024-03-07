@@ -1,29 +1,26 @@
-from typing import Callable, Dict, TypedDict
+"""
+Type definitions for the lymixture package.
+"""
+from typing import Literal
 
-
-class EStep(TypedDict):
-    method: str
-    walkers_per_dim: int
-    nsteps: int
-    nburnin: int
-    sampler: str
-    show_progress: bool
-
-
-class MStep(TypedDict):
-    minimize_method: str
-    imputation_function: Callable[[int], int]  # Function type
-
-
-class Convergence(TypedDict):
-    criterion: str
-    default: Dict[int, float]
-
-
-class EMConfigType(TypedDict):
-    max_steps: int  # Max steps until force exit.
-    method: str  # DEFAULT or INVERTED method.
-    verbose: bool
-    e_step: EStep
-    m_step: MStep
-    convergence: Convergence
+ICDCode = Literal[
+    "C00", # Lip
+    "C01", # Base of tongue
+    "C02", # Other and unspecified parts of tongue
+    "C03", # Gum
+    "C04", # Floor of mouth
+    "C05", # Palate
+    "C06", # Other and unspecified parts of mouth
+    "C07", # Parotid gland
+    "C08", # Other and unspecified major salivary gland
+    "C09", # Tonsil
+    "C10", # Oropharynx
+    "C11", # Nasopharynx
+    "C12", # Pyriform sinus
+    "C13", # Hypopharynx
+    "C14", # Other and ill-defined sites in lip, oral cavity and pharynx
+    "C30", # Nasal cavity and middle ear
+    "C31", # Accessory sinuses
+    "C32", # Larynx
+    "C73", # Thyroid gland
+]
