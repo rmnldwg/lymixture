@@ -12,7 +12,7 @@ import lymph
 import numpy as np
 import pandas as pd
 from lymph import diagnose_times, modalities, types
-from lymph.helper import flatten, popfirst, unflatten_and_split
+from lymph.utils import flatten, popfirst, unflatten_and_split
 
 from lymixture.utils import RESP_COLS, T_STAGE_COL, join_with_resps, normalize
 
