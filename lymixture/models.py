@@ -221,13 +221,15 @@ class LymphMixture(
         """
         params = {}
         for c, component in enumerate(self.components):
-            params[str(c)] = component.get_params(as_flat=as_flat)
+            params[str(c)] = component.get_spread_params(as_flat=as_flat)
 
             for label in self.subgroups:
                 params[str(c)].update({f"{label}_coef": self.get_mixture_coefs(c, label)})
 
+        params.update(self.get_distribution_params(as_flat=as_flat))
+
         if as_flat or not as_dict:
-            return flatten(params)
+            params = flatten(params)
 
         return params if as_dict else params.values()
 
@@ -269,13 +271,14 @@ class LymphMixture(
         for c, component in enumerate(self.components):
             component_kwargs = global_kwargs.copy()
             component_kwargs.update(kwargs.get(str(c), {}))
-            args = component.set_params(*args, **component_kwargs)
+            args = component.set_spread_params(*args, **component_kwargs)
 
             for label in self.subgroups:
                 first, args = popfirst(args)
                 value = component_kwargs.get(f"{label}_coef", first)
                 self.set_mixture_coefs(value, component=c, subgroup=label)
 
+        args = self.set_distribution_params(*args, **global_kwargs)
         self.normalize_mixture_coefs()
         return args
 
@@ -389,7 +392,9 @@ class LymphMixture(
             data = join_with_resps(
                 data, num_components=len(self.components)
             )
-            self.subgroups[label].load_patient_data(data, **kwargs)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=types.InvalidDataModalityWarning)
+                self.subgroups[label].load_patient_data(data, **kwargs)
 
         modalities.Composite.__init__(
             self,

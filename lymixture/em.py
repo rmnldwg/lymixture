@@ -11,23 +11,37 @@ def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndar
     """Compute expected value of latent `model`` variables given the ``params``."""
     model.set_params(**params)
     llhs = model.patient_mixture_likelihoods(log=False, marginalize=False)
-    return utils.normalize(llhs, axis=1)
+    return utils.normalize(llhs.T, axis=0).T
+
+
+def _get_params(model: models.LymphMixture) -> np.ndarray:
+    """Return the params of ``model``."""
+    params = []
+    for comp in model.components:
+        params += list(comp.get_spread_params(as_dict=False))
+
+    params += list(model.get_distribution_params(as_dict=False))
+    mixture_coefs = model.get_mixture_coefs().to_numpy()
+    _shape = mixture_coefs.shape
+    mixture_coefs = np.apply_along_axis(utils.map_to_unit_cube, 0, mixture_coefs)
+    return np.concatenate([params, mixture_coefs.flatten()])
 
 
 def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
     """Set the params of ``model`` from ``params``."""
     for comp in model.components:
-        params = comp.set_params(*params)
+        params = comp.set_spread_params(*params)
+    params = np.array(model.set_distribution_params(*params))
 
-    unit_cube = params.reshape((len(model.subgroups), len(model.components) - 1))
-    simplex = np.apply_along_axis(utils.map_to_simplex, 2, unit_cube)
+    unit_cube = params.reshape((len(model.components) - 1, len(model.subgroups)))
+    simplex = np.apply_along_axis(utils.map_to_simplex, 0, unit_cube)
     model.set_mixture_coefs(simplex)
 
 
 def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, float]:
     """Maximize ``model`` params given expectation of ``latent`` variables."""
     model.set_resps(latent)
-    current_params = np.array(model.get_params(as_dict=False))
+    current_params = _get_params(model)
 
     def objective(params: np.ndarray) -> float:
         _set_params(model, params)
@@ -36,7 +50,7 @@ def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, fl
     result = opt.minimize(
         fun=objective,
         x0=current_params,
-        method="trust-constr",
+        method="Powell",
         bounds=opt.Bounds(
             lb=np.zeros(shape=len(current_params)),
             ub=np.ones(shape=len(current_params)),
@@ -47,4 +61,4 @@ def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, fl
         _set_params(model, result.x)
         return model.get_params(as_dict=True)
     else:
-        raise ValueError("Optimization failed.")
+        raise ValueError(f"Optimization failed: {result}")

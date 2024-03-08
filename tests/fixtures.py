@@ -27,9 +27,10 @@ def get_graph(size: str = "large") -> dict[tuple[str, str], list[str]]:
     """Return either a ``"small"``, a ``"medium"`` or a ``"large"`` graph."""
     if size == "small":
         return {
-            ("tumor", "T"): ["II", "III"],
+            ("tumor", "T"): ["II", "III", "IV"],
             ("lnl", "II"): ["III"],
-            ("lnl", "III"): [],
+            ("lnl", "III"): ["IV"],
+            ("lnl", "IV"): [],
         }
 
     if size == "medium":
