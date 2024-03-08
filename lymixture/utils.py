@@ -53,9 +53,26 @@ def map_to_simplex(from_unit_cube: np.ndarray | list[float]) -> np.ndarray:
     True
     >>> len(sample) == len(mapped) - 1
     True
+    >>> arr2d = np.array([[0.4, 0.7, 0.12, 0.9 ],
+    ...                   [0.1, 0.2, 0.3 , 0.15],
+    ...                   [0.2, 0.3, 0.4 , 0.5 ]])
+    >>> np.apply_along_axis(map_to_simplex, 1, arr2d)
+    array([[0.12, 0.28, 0.3 , 0.2 , 0.1 ],
+           [0.1 , 0.05, 0.05, 0.1 , 0.7 ],
+           [0.2 , 0.1 , 0.1 , 0.1 , 0.5 ]])
     """
     sorted_values = np.sort([0., *from_unit_cube, 1.])
     return sorted_values[1:] - sorted_values[:-1]
+
+
+def map_to_unit_cube(from_simplex: np.ndarray | list[float]) -> np.ndarray:
+    """Map from simplex to unit cube.
+
+    >>> sample = [0.12, 0.28, 0.3, 0.2, 0.1]
+    >>> map_to_unit_cube(sample)
+    array([0.12, 0.4 , 0.7 , 0.9 ])
+    """
+    return np.cumsum(from_simplex)[:-1]
 
 
 def normalize(values: np.ndarray, axis: int) -> np.ndarray:
@@ -71,8 +88,8 @@ def harden(values: np.ndarray, axis: int) -> np.ndarray:
     ...      [0.3, 0.4, 0.3]]
     ... )
     >>> harden(values, axis=1)   # doctest: +NORMALIZE_WHITESPACE
-    array([[0., 0., 1.],
-           [0., 1., 0.]])
+    array([[0, 0, 1],
+           [0, 1, 0]])
     >>> arr = np.array([[[0.84, 0.64, 0.3 , 0.23],
     ...                  [0.18, 0.31, 0.23, 0.54],
     ...                  [0.08, 0.05, 0.72, 0.09]],
@@ -80,18 +97,20 @@ def harden(values: np.ndarray, axis: int) -> np.ndarray:
     ...                  [0.26, 0.48, 0.8 , 0.01],
     ...                  [0.45, 0.09, 0.64, 0.11]]])
     >>> harden(arr, axis=2)      # doctest: +NORMALIZE_WHITESPACE
-    array([[[1., 0., 0., 0.],
-            [0., 0., 0., 1.],
-            [0., 0., 1., 0.]],
-           [[0., 0., 0., 1.],
-            [0., 0., 1., 0.],
-            [0., 0., 1., 0.]]])
+    array([[[1, 0, 0, 0],
+            [0, 0, 0, 1],
+            [0, 0, 1, 0]],
+           [[0, 0, 0, 1],
+            [0, 0, 1, 0],
+            [0, 0, 1, 0]]])
+    >>> harden(np.array([0.1, 0.2, 0.3, 0.1]), axis=0)
+    array([0, 0, 1, 0])
     """
     maxdim = len(values.shape) - 1
-    idx = np.argmax(values, axis=axis)                # one dimension less than `values`
-    one_hot = np.eye(values.shape[axis])[idx]         # right dimension, but wrong order
+    idx = np.argmax(values, axis=axis)                      # one dim less than `values`
+    one_hot = np.eye(values.shape[axis], dtype=int)[idx]    # right dim, but wrong order
     dim_sort = (*range(axis), maxdim, *range(axis, maxdim))
-    return one_hot.transpose(*dim_sort)               # right order
+    return one_hot.transpose(*dim_sort)                     # right order
 
 
 def create_models(
