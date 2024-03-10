@@ -17,8 +17,12 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
     "numpy < 2",
+    "scipy < 2",
     "pandas < 3",
-    "lymph-model >= 1.0.0.a4",
+    "lymph-model >= 1.0.0.rc2",
+    # I think these packages should not be depedencies...
+    "emcee < 4",
+    "lyscripts >= 1.0.0.a0",
 ]
 dynamic = ["version"]
 
@@ -26,6 +30,10 @@ dynamic = ["version"]
 dev = [
     "pre-commit",
     "pylint",
+]
+test = [
+    "jupyter",
+    "pytest",
 ]
 
 [tool.setuptools_scm]
