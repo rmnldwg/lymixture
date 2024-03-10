@@ -15,7 +15,12 @@ def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndar
 
 
 def _get_params(model: models.LymphMixture) -> np.ndarray:
-    """Return the params of ``model``."""
+    """Return the params of ``model``.
+
+    This function is very similar to the :py:meth:`.models.LymphMixture.get_params`
+    method, except that it returns the mixture coefficients in the unit cube, instead
+    of the simplex. Also, it just returns them as a 1D array, instead of a dictionary.
+    """
     params = []
     for comp in model.components:
         params += list(comp.get_spread_params(as_dict=False))
@@ -28,7 +33,14 @@ def _get_params(model: models.LymphMixture) -> np.ndarray:
 
 
 def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
-    """Set the params of ``model`` from ``params``."""
+    """Set the params of ``model`` from ``params``.
+
+    This function is very similar to the :py:meth:`.models.LymphMixture.set_params`
+    method, except that it expects the mixture coefficients to from the unit cube,
+    which will then be mapped to the simplex.
+
+    Also, it does not accept a dictionary of parameters, but a 1D array.
+    """
     for comp in model.components:
         params = comp.set_spread_params(*params)
     params = np.array(model.set_distribution_params(*params))
