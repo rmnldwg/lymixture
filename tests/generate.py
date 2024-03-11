@@ -1,43 +1,42 @@
 """
 Generate synthetic data for testing.
 """
-from pathlib import Path
 import argparse
+from collections import namedtuple
+from pathlib import Path
 from typing import Any, Callable, Literal
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from lymph import models
 
 from lymixture import utils
 
-from fixtures import get_graph, MODALITIES
+Modality = namedtuple("Modality", ["spec", "sens"])
 
 
-# GRAPH_DICT = get_graph("small")
 GRAPH_DICT = {
     ("tumor", "T"): ["II", "III"],
     ("lnl", "II"): ["III"],
     ("lnl", "III"): [],
+}
+MODALITIES = {
+    "path": Modality(spec=0.9, sens=0.9),
 }
 DISTRIBUTIONS = {
     "early": utils.binom_pmf(k=np.arange(11), n=10, p=0.3),
     "late": utils.late_binomial,
 }
 PARAMS_C1 = {
-    "TtoII_spread": 0.1,
-    "TtoIII_spread": 0.3,
-    # "TtoIV_spread": 0.1,
+    "TtoII_spread": 0.05,
+    "TtoIII_spread": 0.25,
     "IItoIII_spread": 0.5,
-    # "IIItoIV_spread": 0.3,
     "late_p": 0.5,
 }
 PARAMS_C2 = {
-    "TtoII_spread": 0.3,
-    "TtoIII_spread": 0.1,
-    # "TtoIV_spread": 0.05,
-    "IItoIII_spread": 0.25,
-    # "IIItoIV_spread": 0.4,
+    "TtoII_spread": 0.25,
+    "TtoIII_spread": 0.05,
+    "IItoIII_spread": 0.1,
     "late_p": 0.5,
 }
 SUBSITE_COL = ("tumor", "1", "subsite")
@@ -87,9 +86,8 @@ def create_model(
     """Create a model to draw patients from."""
     model = models.Unilateral(**(model_kwargs or {"graph_dict": GRAPH_DICT}))
 
-    model.set_modality("path", 1., 1.)
-    # for name, modality in (modalities or MODALITIES).items():
-    #     model.set_modality(name, modality.spec, modality.sens)
+    for name, modality in (modalities or MODALITIES).items():
+        model.set_modality(name, modality.spec, modality.sens)
 
     for t_stage, dist in (distributions or DISTRIBUTIONS).items():
         model.set_distribution(t_stage, dist)
