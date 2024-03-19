@@ -393,7 +393,7 @@ class LymphMixture(
                 data, num_components=len(self.components)
             )
             with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=types.InvalidDataModalityWarning)
+                warnings.filterwarnings("ignore", category=types.DataWarning)
                 self.subgroups[label].load_patient_data(data, **kwargs)
 
         modalities.Composite.__init__(
