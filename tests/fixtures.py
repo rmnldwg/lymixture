@@ -9,7 +9,7 @@ from typing import Callable, Literal
 import numpy as np
 import pandas as pd
 import scipy as sp
-from lymph import diagnose_times, modalities
+from lymph import diagnosis_times, modalities
 
 from lymixture import LymphMixture
 from lymixture.utils import map_to_simplex
@@ -65,19 +65,19 @@ def _create_random_frozen_dist(
     max_time: int,
     rng: np.random.Generator = RNG,
 ) -> np.ndarray:
-    """Create a random frozen diagnose time distribution."""
+    """Create a random frozen diagnosis time distribution."""
     unnormalized = rng.random(size=max_time + 1)
     return unnormalized / np.sum(unnormalized)
 
 def _create_random_parametric_dist(
     max_time: int,
     rng: np.random.Generator = RNG,
-) -> diagnose_times.Distribution:
-    """Create a binomial diagnose time distribution with random params."""
+) -> diagnosis_times.Distribution:
+    """Create a binomial diagnosis time distribution with random params."""
     def _pmf(support: np.ndarray, p: float = rng.random()) -> np.ndarray:
         return sp.stats.binom.pmf(support, p=p, n=max_time + 1)
 
-    return diagnose_times.Distribution(
+    return diagnosis_times.Distribution(
         distribution=_pmf,
         max_time=max_time,
     )

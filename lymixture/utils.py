@@ -125,7 +125,7 @@ def create_models(
     """Create ``num_models`` Unilateral models.
 
     They will all share the same ``graph_dict``, ``model_kwargs``, and distributions
-    over diagnose times. The earliest T-category time distribution is parametrized by
+    over diagnosis times. The earliest T-category time distribution is parametrized by
     ``first_binom_prob`` and ``max_time``.
     """
     if graph_dict is None:

@@ -11,7 +11,7 @@ from typing import Any, Iterable
 import lymph
 import numpy as np
 import pandas as pd
-from lymph import diagnose_times, modalities, types
+from lymph import diagnosis_times, modalities, types
 from lymph.utils import flatten, popfirst, unflatten_and_split
 
 from lymixture.utils import RESP_COLS, T_STAGE_COL, join_with_resps, normalize
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class LymphMixture(
-    diagnose_times.Composite,   # NOTE: The order of inheritance must be the same as the
+    diagnosis_times.Composite,   # NOTE: The order of inheritance must be the same as the
     modalities.Composite,       #       order in which the respective __init__ methods
     types.Model,                #       are called.
 ):
@@ -58,7 +58,7 @@ class LymphMixture(
         self.subgroups: dict[str, model_cls] = {}
         self.components: list[model_cls] = self._init_components(num_components)
 
-        diagnose_times.Composite.__init__(
+        diagnosis_times.Composite.__init__(
             self,
             distribution_children=dict(enumerate(self.components)),
             is_distribution_leaf=False,
@@ -378,7 +378,7 @@ class LymphMixture(
     ):
         """Split the ``patient_data`` into subgroups and load it into the model.
 
-        This amounts to computing the diagnose matrices for the individual subgroups.
+        This amounts to computing the diagnosis matrices for the individual subgroups.
         The ``split_by`` tuple should contain the three-level header of the LyProX-style
         data. Any additional keyword arguments are passed to the
         :py:meth:`~lymph.models.Unilateral.load_patient_data` method.
@@ -434,7 +434,7 @@ class LymphMixture(
                 # use the index to align the likelihoods with the patients
                 t_idx = subgroup.patient_data[T_STAGE_COL] == t
                 sub_llhs[t_idx] = np.stack([
-                    comp.state_dist(t) @ subgroup.diagnose_matrix(t).T
+                    comp.state_dist(t) @ subgroup.diagnosis_matrix(t).T
                     for comp in self.components
                 ], axis=-1)
             llhs = np.vstack([llhs, sub_llhs])
@@ -529,6 +529,14 @@ class LymphMixture(
             return self._complete_data_likelihood(log=log)
 
         return self._incomplete_data_likelihood(log=log)
+
+
+    def state_dist(self):
+        raise NotImplementedError
+
+
+    def posterior_state_dist(self):
+        raise NotImplementedError
 
 
     def risk(self):

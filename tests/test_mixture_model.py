@@ -6,16 +6,17 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from fixtures import MixtureModelFixture, create_random_dist
 from lymph.models import Unilateral
 
 from lymixture import LymphMixture
 from lymixture.utils import RESP_COLS
 
+from . import fixtures
+
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 
-class TestMixtureModel(MixtureModelFixture):
+class TestMixtureModel(fixtures.MixtureModelFixture):
     """Unit test the mixture model class."""
 
     def setUp(self) -> None:
@@ -74,8 +75,8 @@ class TestMixtureModel(MixtureModelFixture):
         )
 
 
-class DistributionsTestCase(MixtureModelFixture):
-    """Test the functionality provided by the diagnose time distribution composite."""
+class DistributionsTestCase(fixtures.MixtureModelFixture):
+    """Test the functionality provided by the diagnosis time distribution composite."""
 
     def setUp(self) -> None:
         """Create intermediate and helper objects for the tests."""
@@ -87,8 +88,8 @@ class DistributionsTestCase(MixtureModelFixture):
             load_data=True,
         )
         self.dists = {
-            "early": create_random_dist("frozen", max_time=10, rng=self.rng),
-            "late": create_random_dist("parametric", max_time=10, rng=self.rng),
+            "early": fixtures.create_random_dist("frozen", max_time=10, rng=self.rng),
+            "late": fixtures.create_random_dist("parametric", max_time=10, rng=self.rng),
         }
         self.mixture_model.set_distribution("early", self.dists["early"])
         self.mixture_model.set_distribution("late", self.dists["late"])
@@ -106,7 +107,7 @@ class DistributionsTestCase(MixtureModelFixture):
         ))
 
 
-class GetAndSetParamsTestCase(MixtureModelFixture, unittest.TestCase):
+class GetAndSetParamsTestCase(fixtures.MixtureModelFixture, unittest.TestCase):
     """Check the setters and getters of the model params."""
 
     def setUp(self) -> None:
@@ -118,8 +119,8 @@ class GetAndSetParamsTestCase(MixtureModelFixture, unittest.TestCase):
             load_data=False,
         )
         self.dists = {
-            "early": create_random_dist("frozen", max_time=10, rng=self.rng),
-            "late": create_random_dist("parametric", max_time=10, rng=self.rng),
+            "early": fixtures.create_random_dist("frozen", max_time=10, rng=self.rng),
+            "late": fixtures.create_random_dist("parametric", max_time=10, rng=self.rng),
         }
         self.mixture_model.set_distribution("early", self.dists["early"])
         self.mixture_model.set_distribution("late", self.dists["late"])
@@ -133,7 +134,7 @@ class GetAndSetParamsTestCase(MixtureModelFixture, unittest.TestCase):
         self.assertEqual(params_to_set, self.mixture_model.get_params())
 
 
-class LikelihoodsTestCase(MixtureModelFixture, unittest.TestCase):
+class LikelihoodsTestCase(fixtures.MixtureModelFixture, unittest.TestCase):
     """Test the different likelihood functions."""
 
     def setUp(self) -> None:
@@ -146,8 +147,8 @@ class LikelihoodsTestCase(MixtureModelFixture, unittest.TestCase):
         )
         self.mixture_model.set_modality("max_llh", spec=1., sens=1.)
         self.dists = {
-            "early": create_random_dist("parametric", max_time=10, rng=self.rng),
-            "late": create_random_dist("parametric", max_time=10, rng=self.rng),
+            "early": fixtures.create_random_dist("parametric", max_time=10, rng=self.rng),
+            "late": fixtures.create_random_dist("parametric", max_time=10, rng=self.rng),
         }
         self.mixture_model.set_distribution("early", self.dists["early"])
         self.mixture_model.set_distribution("late", self.dists["late"])
