@@ -529,15 +529,111 @@ class LymphMixture(
             return self._complete_data_likelihood(log=log)
 
         return self._incomplete_data_likelihood(log=log)
+    
+    
+    def state_dist(
+        self,
+        t_stage: str = "early",
+        subgroup = None
+    ) -> np.ndarray:
+        """Compute the distribution over possible states.
+
+        Do this for a given ``t_stage`` and ``subgroup``. If no subgroup is given, the
+        distribution is computed for all subgroups. The result is a matrix with shape
+        ``(num_subgroups, num_states)``.
+        """
+        state_dists_comp = np.zeros((len(self.components), len(self.components[0].state_dist())))
+        for index, comp in enumerate(self.components):
+            state_dists_comp[index] = comp.state_dist(t_stage)
+
+        if subgroup != None:
+            state_dist = self.get_mixture_coefs(subgroup=subgroup) @ state_dists_comp
+        else:
+            state_dist = np.zeros((len(self.subgroups), len(self.components[0].state_dist())))
+            for index, mixer in enumerate(self._mixture_coefs.items()):
+                state_dist[index] = mixer[1] @ state_dists_comp
+        return state_dist
 
 
-    def state_dist(self):
-        raise NotImplementedError
+    def posterior_state_dist(
+        self,
+        subgroup,
+        given_params: types.ParamsType | None = None,
+        given_state_dist: np.ndarray | None = None,
+        given_diagnosis: types.DiagnosisType | None = None,
+        t_stage: str | int = "early",
+    ) -> np.ndarray:
+        """Compute the posterior distribution over hidden states given a diagnosis.
 
+        The ``given_diagnosis`` is a dictionary of diagnosis for each modality. E.g.,
+        this could look like this:
 
-    def posterior_state_dist(self):
-        raise NotImplementedError
+        .. code-block:: python
 
+            given_diagnosis = {
+                "MRI": {"II": True, "III": False, "IV": False},
+                "PET": {"II": True, "III": True, "IV": None},
+            }
+
+        The ``t_stage`` parameter determines the T-stage for which the posterior is
+        computed.
+        """
+        if given_state_dist is None:
+            # in contrast to when computing the likelihood, we do want to raise an error
+            # here if the parameters are invalid, since we want to know if the user
+            # provided invalid parameters.
+            if given_params is not None:
+                if isinstance(given_params, dict):
+                    self.set_params(**given_params)
+                else:
+                    self.set_params(*given_params)
+            given_state_dist = self.state_dist(t_stage,subgroup)
+
+        if given_diagnosis is None:
+            return given_state_dist
+        diagnosis_encoding = self.subgroups[subgroup].compute_encoding(given_diagnosis)
+        # vector containing P(Z=z|X). Essentially a data matrix for one patient
+        diagnosis_given_state = diagnosis_encoding @ self.subgroups[subgroup].observation_matrix().T
+
+        # multiply P(Z=z|X) * P(X) element-wise to get vector of joint probs P(Z=z,X)
+        joint_diagnosis_and_state = given_state_dist * diagnosis_given_state
+
+        # compute vector of probabilities for all possible involvements given the
+        # specified diagnosis P(X|Z=z) = P(Z=z,X) / P(X), where P(X) = sum_z P(Z=z,X)
+        return joint_diagnosis_and_state / np.sum(joint_diagnosis_and_state)
 
     def risk(self):
         raise NotImplementedError
+    
+    def risk(
+        self,
+        subgroup,
+        involvement: types.PatternType,
+        given_params: types.ParamsType | None = None,
+        given_state_dist: np.ndarray | None = None,
+        given_diagnosis: dict[str, types.PatternType] | None = None,
+        t_stage: str = "early",
+    ) -> float:
+        """Compute risk of a certain ``involvement``, using the ``given_diagnosis``.
+
+        If an ``involvement`` pattern of interest is provided, this method computes
+        the risk of seeing just that pattern for the set of given parameters and a
+        dictionary of diagnosis for each modality.
+
+        If no ``involvement`` is provided, this will simply return the posterior
+        distribution over hidden states, given the diagnosis, as computed by the
+        :py:meth:`.posterior_state_dist` method. See its documentation for more
+        details about the arguments and the return value.
+        """
+        posterior_state_dist = self.posterior_state_dist(
+            subgroup,
+            given_params=given_params,
+            given_state_dist=given_state_dist,
+            given_diagnosis=given_diagnosis,
+            t_stage=t_stage,
+        )
+
+        # if a specific involvement of interest is provided, marginalize the
+        # resulting vector of hidden states to match that involvement of
+        # interest
+        return self.components[0].marginalize(involvement, posterior_state_dist)    

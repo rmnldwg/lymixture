@@ -57,6 +57,7 @@ def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, fl
 
     def objective(params: np.ndarray) -> float:
         _set_params(model, params)
+        # print(f"Optimizing with params: {params}") # DEBUG
         return -model.likelihood()
 
     result = opt.minimize(
