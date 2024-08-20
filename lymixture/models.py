@@ -33,6 +33,7 @@ class LymphMixture(
         model_cls: type = lymph.models.Unilateral,
         model_kwargs: dict[str, Any] | None = None,
         num_components: int = 2,
+        universal_p: bool = False,
     ):
         """Initialize the mixture model.
 
@@ -54,6 +55,7 @@ class LymphMixture(
         self._model_cls = model_cls
         self._model_kwargs = model_kwargs
         self._mixture_coefs = None
+        self.universal_p = universal_p
 
         self.subgroups: dict[str, model_cls] = {}
         self.components: list[model_cls] = self._init_components(num_components)
@@ -221,12 +223,15 @@ class LymphMixture(
         """
         params = {}
         for c, component in enumerate(self.components):
-            params[str(c)] = component.get_spread_params(as_flat=as_flat)
+            if self.universal_p:
+                params[str(c)] = component.get_spread_params(as_flat=as_flat)
+            else:
+                params[str(c)] = component.get_params(as_flat = as_flat)
 
             for label in self.subgroups:
                 params[str(c)].update({f"{label}_coef": self.get_mixture_coefs(c, label)})
-
-        params.update(self.get_distribution_params(as_flat=as_flat))
+        if self.universal_p:
+            params.update(self.get_distribution_params(as_flat=as_flat))
 
         if as_flat or not as_dict:
             params = flatten(params)
@@ -272,13 +277,14 @@ class LymphMixture(
             component_kwargs = global_kwargs.copy()
             component_kwargs.update(kwargs.get(str(c), {}))
             args = component.set_spread_params(*args, **component_kwargs)
-
+            if self.universal_p == False:
+                args = component.set_distribution_params(*args, **component_kwargs)
             for label in self.subgroups:
                 first, args = popfirst(args)
                 value = component_kwargs.get(f"{label}_coef", first)
                 self.set_mixture_coefs(value, component=c, subgroup=label)
-
-        args = self.set_distribution_params(*args, **global_kwargs)
+        if self.universal_p:
+            args = self.set_distribution_params(*args, **global_kwargs)
         self.normalize_mixture_coefs()
         return args
 

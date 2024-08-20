@@ -22,10 +22,14 @@ def _get_params(model: models.LymphMixture) -> np.ndarray:
     of the simplex. Also, it just returns them as a 1D array, instead of a dictionary.
     """
     params = []
-    for comp in model.components:
-        params += list(comp.get_spread_params(as_dict=False))
+    if model.universal_p:
+        for comp in model.components:
+            params += list(comp.get_spread_params(as_dict=False))
 
-    params += list(model.get_distribution_params(as_dict=False))
+        params += list(model.get_distribution_params(as_dict=False))
+    else:
+        for comp in model.components:
+            params += list(comp.get_params(as_dict=False))
     mixture_coefs = model.get_mixture_coefs().to_numpy()
     _shape = mixture_coefs.shape
     mixture_coefs = np.apply_along_axis(utils.map_to_unit_cube, 0, mixture_coefs)
@@ -41,10 +45,14 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
 
     Also, it does not accept a dictionary of parameters, but a 1D array.
     """
-    for comp in model.components:
-        params = comp.set_spread_params(*params)
-    params = np.array(model.set_distribution_params(*params))
-
+    if model.universal_p:
+        for comp in model.components:
+            params = comp.set_spread_params(*params)
+        params = np.array(model.set_distribution_params(*params))
+    else:     
+        for comp in model.components:
+            params = comp.set_params(*params)
+        params = np.array(params)
     unit_cube = params.reshape((len(model.components) - 1, len(model.subgroups)))
     simplex = np.apply_along_axis(utils.map_to_simplex, 0, unit_cube)
     model.set_mixture_coefs(simplex)
