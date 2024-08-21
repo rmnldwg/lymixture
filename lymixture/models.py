@@ -20,6 +20,11 @@ pd.options.mode.copy_on_write = True
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 logger = logging.getLogger(__name__)
 
+# Ignore a warning that appears due to self.t_stage when each component has a different t_stage
+# (If we set components with different t_stages, i.e. not all of them are early and late,
+# but some have others, then this wont work anymore and we need to reconsider the code structure)
+warnings.filterwarnings("ignore", message="Not all distributions are equal. Returning the first one.")
+
 
 
 class LymphMixture(
@@ -503,6 +508,7 @@ class LymphMixture(
 
     def likelihood(
         self,
+        use_complete: bool = True,
         given_params: Iterable[float] | dict[str, float] | None = None,
         given_resps: np.ndarray | None = None,
         log: bool = True,
@@ -529,11 +535,12 @@ class LymphMixture(
                 self.set_params(*given_params)
         except ValueError:
             return -np.inf if log else 0.
-
-        if given_resps is not None:
-            self.set_resps(given_resps)
+        if use_complete:
+            if given_resps is not None:
+                self.set_resps(given_resps)
+            if np.any(self.get_resps().isna()):
+                return 'no responsibilities set, switch `use_complete` to False or set responsibilities'
             return self._complete_data_likelihood(log=log)
-
         return self._incomplete_data_likelihood(log=log)
     
     
@@ -548,14 +555,14 @@ class LymphMixture(
         distribution is computed for all subgroups. The result is a matrix with shape
         ``(num_subgroups, num_states)``.
         """
-        state_dists_comp = np.zeros((len(self.components), len(self.components[0].state_dist())))
+        state_dists_comp = np.zeros((len(self.components), len(self.components[0].state_dist(t_stage))))
         for index, comp in enumerate(self.components):
             state_dists_comp[index] = comp.state_dist(t_stage)
 
         if subgroup != None:
             state_dist = self.get_mixture_coefs(subgroup=subgroup) @ state_dists_comp
         else:
-            state_dist = np.zeros((len(self.subgroups), len(self.components[0].state_dist())))
+            state_dist = np.zeros((len(self.subgroups), len(self.components[0].state_dist(t_stage))))
             for index, mixer in enumerate(self._mixture_coefs.items()):
                 state_dist[index] = mixer[1] @ state_dists_comp
         return state_dist
@@ -608,8 +615,6 @@ class LymphMixture(
         # specified diagnosis P(X|Z=z) = P(Z=z,X) / P(X), where P(X) = sum_z P(Z=z,X)
         return joint_diagnosis_and_state / np.sum(joint_diagnosis_and_state)
 
-    def risk(self):
-        raise NotImplementedError
     
     def risk(
         self,
