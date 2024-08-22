@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 from lyscripts.sample import DummyPool, run_mcmc_with_burnin
-from scipy.special import factorial
+from scipy.special import factorial, softmax
 
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 logger = logging.getLogger(__name__)
@@ -40,39 +40,35 @@ def late_binomial(support: np.ndarray, p: float = 0.5) -> np.ndarray:
 def map_to_simplex(from_unit_cube: np.ndarray | list[float]) -> np.ndarray:
     """Map from unit cube to simplex.
 
-    The result has one entry more than ``values``. The method comes from
-    https://cs.stackexchange.com/a/3229
+    The result has one entry more than ``values``.
+    The method creates a simplex by adding a dimension which is fixed to zero
+    Then the values are run through a softmax function to normalize them.
 
     Example:
 
-    >>> sample = [0.4, 0.7, 0.12, 0.9]
+    >>> sample = [[0,4,3]]
     >>> mapped = map_to_simplex(sample)
     >>> mapped
-    array([0.12, 0.28, 0.3 , 0.2 , 0.1 ])
-    >>> sum(mapped) == 1.
-    True
-    >>> len(sample) == len(mapped) - 1
-    True
-    >>> arr2d = np.array([[0.4, 0.7, 0.12, 0.9 ],
-    ...                   [0.1, 0.2, 0.3 , 0.15],
-    ...                   [0.2, 0.3, 0.4 , 0.5 ]])
-    >>> np.apply_along_axis(map_to_simplex, 1, arr2d)
-    array([[0.12, 0.28, 0.3 , 0.2 , 0.1 ],
-           [0.1 , 0.05, 0.05, 0.1 , 0.7 ],
-           [0.2 , 0.1 , 0.1 , 0.1 , 0.5 ]])
+    array([[0.5       , 0.01798621, 0.04742587],
+           [0.5       , 0.98201379, 0.95257413]])
     """
-    sorted_values = np.sort([0., *from_unit_cube, 1.])
-    return sorted_values[1:] - sorted_values[:-1]
+    non_normalized = np.zeros((from_unit_cube.shape[0]+1, from_unit_cube.shape[1]))
+    non_normalized[1:, :] = from_unit_cube
+    simplex = softmax(non_normalized, axis=0)
+    return simplex
 
 
 def map_to_unit_cube(from_simplex: np.ndarray | list[float]) -> np.ndarray:
     """Map from simplex to unit cube.
 
-    >>> sample = [0.12, 0.28, 0.3, 0.2, 0.1]
+    >>> sample = array([[0.5       , 0.01798621, 0.04742587],
+                        [0.5       , 0.98201379, 0.95257413]])
     >>> map_to_unit_cube(sample)
-    array([0.12, 0.4 , 0.7 , 0.9 ])
+    array([[0., 4., 3.]])
     """
-    return np.cumsum(from_simplex)[:-1]
+    normalizer = 1/ from_simplex[0]
+    unit_cube = np.log(from_simplex[1:] * normalizer)
+    return unit_cube
 
 
 def normalize(values: np.ndarray, axis: int) -> np.ndarray:

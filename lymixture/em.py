@@ -3,6 +3,7 @@ Implement the EM algorithm for the mixture model.
 """
 import numpy as np
 from scipy import optimize as opt
+from scipy.special import softmax
 
 from lymixture import models, utils
 
@@ -32,7 +33,7 @@ def _get_params(model: models.LymphMixture) -> np.ndarray:
             params += list(comp.get_params(as_dict=False))
     mixture_coefs = model.get_mixture_coefs().to_numpy()
     _shape = mixture_coefs.shape
-    mixture_coefs = np.apply_along_axis(utils.map_to_unit_cube, 0, mixture_coefs)
+    mixture_coefs = utils.map_to_unit_cube(mixture_coefs)
     return np.concatenate([params, mixture_coefs.flatten()])
 
 
@@ -54,7 +55,7 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
             params = comp.set_params(*params)
         params = np.array(params)
     unit_cube = params.reshape((len(model.components) - 1, len(model.subgroups)))
-    simplex = np.apply_along_axis(utils.map_to_simplex, 0, unit_cube)
+    simplex = utils.map_to_simplex(unit_cube)
     model.set_mixture_coefs(simplex)
 
 
@@ -62,7 +63,10 @@ def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, fl
     """Maximize ``model`` params given expectation of ``latent`` variables."""
     model.set_resps(latent)
     current_params = _get_params(model)
-
+    lb = np.zeros(shape=len(current_params))
+    ub = np.ones(shape=len(current_params))
+    lb[-(len(model.components)-1) * len(model.subgroups):] = -np.inf
+    ub[-(len(model.components)-1) * len(model.subgroups):] = np.inf
     def objective(params: np.ndarray) -> float:
         _set_params(model, params)
         # print(f"Optimizing with params: {params}") # DEBUG
@@ -73,8 +77,8 @@ def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, fl
         x0=current_params,
         method="Powell",
         bounds=opt.Bounds(
-            lb=np.zeros(shape=len(current_params)),
-            ub=np.ones(shape=len(current_params)),
+            lb=lb,
+            ub=ub,
         ),
     )
 
