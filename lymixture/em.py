@@ -19,8 +19,7 @@ def _get_params(model: models.LymphMixture) -> np.ndarray:
     """Return the params of ``model``.
 
     This function is very similar to the :py:meth:`.models.LymphMixture.get_params`
-    method, except that it returns the mixture coefficients in the unit cube, instead
-    of the simplex. Also, it just returns them as a 1D array, instead of a dictionary.
+    method. Also, it just returns them as a 1D array, instead of a dictionary.
     """
     params = []
     if model.universal_p:
@@ -31,18 +30,14 @@ def _get_params(model: models.LymphMixture) -> np.ndarray:
     else:
         for comp in model.components:
             params += list(comp.get_params(as_dict=False))
-    mixture_coefs = model.get_mixture_coefs().to_numpy()
-    _shape = mixture_coefs.shape
-    mixture_coefs = utils.map_to_unit_cube(mixture_coefs)
-    return np.concatenate([params, mixture_coefs.flatten()])
+    return params
 
 
 def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
     """Set the params of ``model`` from ``params``.
 
     This function is very similar to the :py:meth:`.models.LymphMixture.set_params`
-    method, except that it expects the mixture coefficients to from the unit cube,
-    which will then be mapped to the simplex.
+    method.
 
     Also, it does not accept a dictionary of parameters, but a 1D array.
     """
@@ -54,19 +49,15 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
         for comp in model.components:
             params = comp.set_params(*params)
         params = np.array(params)
-    unit_cube = params.reshape((len(model.components) - 1, len(model.subgroups)))
-    simplex = utils.map_to_simplex(unit_cube)
-    model.set_mixture_coefs(simplex)
 
 
 def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, float]:
     """Maximize ``model`` params given expectation of ``latent`` variables."""
     model.set_resps(latent)
+    model.set_mixture_coefs(model.compute_mixture())
     current_params = _get_params(model)
     lb = np.zeros(shape=len(current_params))
     ub = np.ones(shape=len(current_params))
-    lb[-(len(model.components)-1) * len(model.subgroups):] = -np.inf
-    ub[-(len(model.components)-1) * len(model.subgroups):] = np.inf
     def objective(params: np.ndarray) -> float:
         _set_params(model, params)
         # print(f"Optimizing with params: {params}") # DEBUG

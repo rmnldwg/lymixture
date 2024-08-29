@@ -43,7 +43,8 @@ class LymphMixture(
         """Initialize the mixture model.
 
         The mixture will be based on the given ``model_cls`` (which is instantiated with
-        the ``model_kwargs``), and will have ``num_components``.
+        the ``model_kwargs``), and will have ``num_components``. ``universal_p`` indicates
+        whether the model shares the time prior distribution over all components.
         """
         if model_kwargs is None:
             model_kwargs = {"graph_dict": {
@@ -394,6 +395,7 @@ class LymphMixture(
         data. Any additional keyword arguments are passed to the
         :py:meth:`~lymph.models.Unilateral.load_patient_data` method.
         """
+        self.split_by = split_by
         self._mixture_coefs = None
         grouped = patient_data.groupby(split_by)
 
@@ -483,6 +485,20 @@ class LymphMixture(
             return np.logaddexp.reduce(llh, axis=1) if log else np.sum(llh, axis=1)
 
         return llh
+
+        
+    def compute_mixture(
+        self,
+        latent: np.ndarray = None,
+    ) -> np.ndarray:
+        """Computes the optimal mixture parameters given the latent variables"""
+        mixture_params = np.zeros((self.get_mixture_coefs().shape)).T
+        if latent != None:
+            self.set_resps(latent)
+        for index,key in enumerate(self.subgroups.keys()):
+            mixture_params[index] = self.get_resps().loc[self.patient_data[self.split_by] == key].sum(axis = 0)/(self.patient_data[self.split_by] == key).sum()
+        df = pd.DataFrame(mixture_params.T,columns = self.subgroups.keys())
+        return df
 
 
     def _incomplete_data_likelihood(
