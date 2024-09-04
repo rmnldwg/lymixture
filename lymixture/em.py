@@ -78,3 +78,42 @@ def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, fl
         return model.get_params(as_dict=True)
     else:
         raise ValueError(f"Optimization failed: {result}")
+    
+def maximization_component_wise(model: models.LymphMixture, latent: np.ndarray) -> dict[str, float]:
+    """Maximize ``model`` params given expectation of ``latent`` variables."""
+    model.set_resps(latent)
+    model.set_mixture_coefs(model.compute_mixture())
+    def objective(params):
+        model.components[component].set_params(*params)
+        return model.component_likelihood(component = component)
+    for component in range(len(model.components)):
+        current_params = list(model.components[component].get_params(as_dict = False))
+        lb = np.zeros(shape= len(current_params))
+        ub = np.ones(shape= len(current_params))
+        result = opt.minimize(fun = objective, x0 = current_params,bounds=opt.Bounds(lb=lb,ub=ub), method = 'Powell')
+        if result.success:
+            model.components[component].set_params(*result.x)
+            print(result)
+        else:
+            raise ValueError(f"Optimization failed: {result}")
+    return model.get_params(as_dict=True)
+
+
+
+    current_params = _get_params(model)
+    lb = np.zeros(shape=len(current_params))
+    ub = np.ones(shape=len(current_params))
+    def objective(params: np.ndarray) -> float:
+        _set_params(model, params)
+        # print(f"Optimizing with params: {params}") # DEBUG
+        return -model.likelihood()
+
+    result = opt.minimize(
+        fun=objective,
+        x0=current_params,
+        method="Powell",
+        bounds=opt.Bounds(
+            lb=lb,
+            ub=ub,
+        ),
+    )
