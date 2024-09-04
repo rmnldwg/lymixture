@@ -511,6 +511,29 @@ class LymphMixture(
         return np.sum(llhs) if log else np.prod(llhs)
 
 
+    def component_likelihood(
+        self,
+        component: int,
+        t_stage: str | None = None,
+        log: bool = True,
+    )-> float:
+        "Compute the complete data likelihood of a given component."
+        resps = self.get_resps(t_stage=t_stage).to_numpy()
+        if t_stage is None:
+            t_stages = self.t_stages
+        else:
+            t_stages = [t_stage]
+        # This part here is similar to what we have in patient_component_likelihoods but only for a single component. The idea is to reduce computation time
+        llhs = np.empty(shape=(0))
+        for subgroup in self.subgroups.values():
+            sub_llhs = np.empty(shape=(len(subgroup.patient_data)))
+            for t in t_stages:
+                # use the index to align the likelihoods with the patients
+                t_idx = subgroup.patient_data[T_STAGE_COL] == t
+                sub_llhs[t_idx] = self.components[component].state_dist(t) @ subgroup.diagnosis_matrix(t).T
+            llhs = np.hstack([llhs, sub_llhs])
+        return np.sum(resps[:,component] * llhs) if log else np.prod(llhs ** resps[:,component])
+
     def _complete_data_likelihood(
         self,
         t_stage: str | None = None,
