@@ -16,21 +16,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
-    "numpy < 2",
-    "scipy < 2",
-    "pandas < 3",
-    "lymph-model >= 1.2, < 2",
+    "numpy",
+    "scipy",
+    "pandas",
+    "lymph-model >= 1.2",
     # I think these packages should not be depedencies...
-    "emcee < 4",
+    "emcee",
     "lyscripts >= 1.0.0.a0",
 ]
 dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = [
-    "pre-commit",
-    "pylint",
-]
 test = [
     "jupyter",
     "pytest",
