@@ -517,7 +517,10 @@ class LymphMixture(
         t_stage: str | None = None,
         log: bool = True,
     )-> float:
-        "Compute the complete data likelihood of a given component."
+        """Compute the complete data (log-) likelihood of a given component.
+        
+        Note: For the component-wise optimization ONLY the log-likelihood is used.
+        """
         resps = self.get_resps(t_stage=t_stage).to_numpy()
         if t_stage is None:
             t_stages = self.t_stages
@@ -532,7 +535,8 @@ class LymphMixture(
                 t_idx = subgroup.patient_data[T_STAGE_COL] == t
                 sub_llhs[t_idx] = self.components[component].state_dist(t) @ subgroup.diagnosis_matrix(t).T
             llhs = np.hstack([llhs, sub_llhs])
-        return np.sum(resps[:,component] * llhs) if log else np.prod(llhs ** resps[:,component])
+        return np.sum(resps[:,component] * np.log(llhs)) if log else np.prod(llhs ** resps[:,component])
+
 
     def _complete_data_likelihood(
         self,
