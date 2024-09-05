@@ -11,7 +11,13 @@ import pandas as pd
 from lymph import diagnosis_times, modalities, types
 from lymph.utils import flatten, popfirst, unflatten_and_split
 
-from lymixture.utils import RESP_COLS, T_STAGE_COL, join_with_resps, normalize
+from lymixture.utils import (
+    RESP_COLS,
+    T_STAGE_COL,
+    join_with_resps,
+    normalize,
+    one_slice,
+)
 
 pd.options.mode.copy_on_write = True
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
@@ -29,8 +35,8 @@ warnings.filterwarnings(
 
 class LymphMixture(
     diagnosis_times.Composite,  # NOTE: The order of inheritance must be the same as the
-    modalities.Composite,  #       order in which the respective __init__ methods
-    types.Model,  #       are called.
+    modalities.Composite,  #            order in which the respective __init__ methods
+    types.Model,  #                     are called.
 ):
     """Class that handles the individual components of the mixture model."""
 
@@ -164,8 +170,8 @@ class LymphMixture(
     def repeat_mixture_coefs(
         self,
         t_stage: str | None = None,
-        log: bool = False,
         subgroup: str | None = None,
+        log: bool = False,
     ) -> np.ndarray:
         """Repeat mixture coefficients.
 
@@ -173,7 +179,7 @@ class LymphMixture(
         are in the specified ``subgroup`` (or all if it is set to ``None``). The
         mixture coefficients are returned in log-space if ``log`` is set to ``True``.
         """
-        res = np.empty(shape=(0, len(self.components)))
+        result = np.empty(shape=(0, len(self.components)))
 
         if subgroup is not None:
             subgroups = {subgroup: self.subgroups[subgroup]}
@@ -183,14 +189,44 @@ class LymphMixture(
         for label, subgroup in subgroups.items():
             is_t_stage = subgroup.patient_data[T_STAGE_COL] == t_stage
             num_patients = is_t_stage.sum() if t_stage is not None else len(is_t_stage)
-            res = np.vstack(
+            result = np.vstack(
                 [
-                    res,
+                    result,
                     np.tile(self.get_mixture_coefs(subgroup=label), (num_patients, 1)),
                 ]
             )
 
-        return np.log(res) if log else res
+        return np.log(result) if log else result
+
+    def infer_mixture_coefs(
+        self,
+        new_resps: np.ndarray | None = None,
+    ) -> pd.DataFrame:
+        """Infer the optimal mixture parameters given the mixture's responsibilities.
+
+        This method can be seen as part of the M-step of the EM algorithm, since the
+        mixture's likelihood is maximized with respect to the mixture coefficients when
+        they are simply the average of the corresponding responsibilities.
+
+        If set to ``None``, the responsibilities already stored in the model are used.
+        Otherwise, they are first set via the :py:meth:`.set_resps` method.
+
+        The returned ``DataFrame`` has the shape ``(num_components, num_subgroups)`` and
+        can be used to set the mixture coefficients via the
+        :py:meth:`.set_mixture_coefs` method.
+        """
+        mixture_params = np.zeros(self.get_mixture_coefs().shape).T
+
+        if new_resps is not None:
+            self.set_resps(new_resps)
+
+        for i, subgroup in enumerate(self.subgroups.keys()):
+            num_in_subgroup = len(self.subgroups[subgroup].patient_data)
+            mixture_params[i] = (
+                self.get_resps(subgroup=subgroup).sum(axis=0) / num_in_subgroup
+            )
+
+        return pd.DataFrame(mixture_params.T, columns=self.subgroups.keys())
 
     def get_params(
         self,
@@ -228,15 +264,15 @@ class LymphMixture(
         """
         params = {}
         for c, component in enumerate(self.components):
-            c = str(c)
-
             if self.universal_p:
-                params[c] = component.get_spread_params(as_flat=as_flat)
+                params[str(c)] = component.get_spread_params(as_flat=as_flat)
             else:
-                params[c] = component.get_params(as_flat=as_flat)
+                params[str(c)] = component.get_params(as_flat=as_flat)
 
             for label in self.subgroups:
-                params[c].update({f"{label}_coef": self.get_mixture_coefs(c, label)})
+                params[str(c)].update(
+                    {f"{label}_coef": self.get_mixture_coefs(c, label)}
+                )
 
         if self.universal_p:
             params.update(self.get_distribution_params(as_flat=as_flat))
@@ -346,12 +382,12 @@ class LymphMixture(
 
     def set_resps(
         self,
-        new_responsibilities: float | np.ndarray,
+        new_resps: float | np.ndarray,
         patient: int | None = None,
         subgroup: str | None = None,
         component: int | None = None,
     ) -> None:
-        """Assign ``new_responsibilities`` to the model.
+        """Assign ``new_resps`` (responsibilities) to the model.
 
         They should have the shape ``(num_patients, num_components)``, where
         ``num_patients`` is either the total number of patients in the model or only
@@ -362,15 +398,15 @@ class LymphMixture(
         of the model or the expectation values of the latent variables (depending on
         whether or not they are "hardened", see :py:meth:`.harden_responsibilities`).
         """
-        if isinstance(new_responsibilities, pd.DataFrame):
-            new_responsibilities = new_responsibilities.to_numpy()
+        if isinstance(new_resps, pd.DataFrame):
+            new_resps = new_resps.to_numpy()
 
         pat_slice = slice(None) if patient is None else patient
         comp_slice = (*RESP_COLS, slice(None) if component is None else component)
 
         if subgroup is not None:
             sub_data = self.subgroups[subgroup].patient_data
-            sub_data.loc[pat_slice, comp_slice] = new_responsibilities
+            sub_data.loc[pat_slice, comp_slice] = new_resps
             return
 
         patient_idx = 0
@@ -380,12 +416,12 @@ class LymphMixture(
 
             if patient is not None:
                 if patient_idx > patient:
-                    sub_data.loc[pat_slice, comp_slice] = new_responsibilities
+                    sub_data.loc[pat_slice, comp_slice] = new_resps
                     break
             else:
-                sub_resp = new_responsibilities[: len(sub_data)]
+                sub_resp = new_resps[: len(sub_data)]
                 sub_data.loc[pat_slice, comp_slice] = sub_resp
-                new_responsibilities = new_responsibilities[len(sub_data) :]
+                new_resps = new_resps[len(sub_data) :]
 
     def load_patient_data(
         self,
@@ -400,7 +436,6 @@ class LymphMixture(
         data. Any additional keyword arguments are passed to the
         :py:meth:`~lymph.models.Unilateral.load_patient_data` method.
         """
-        self.split_by = split_by
         self._mixture_coefs = None
         grouped = patient_data.groupby(split_by)
 
@@ -429,6 +464,8 @@ class LymphMixture(
     def patient_component_likelihoods(
         self,
         t_stage: str | None = None,
+        subgroup: str | None = None,
+        component: int | None = None,
         log: bool = True,
     ) -> np.ndarray:
         """Compute the (log-)likelihood of all patients, given the components.
@@ -437,22 +474,31 @@ class LymphMixture(
         the likelihood of each patient with ``t_stage`` under each component. If ``log``
         is set to ``True``, the likelihoods are returned in log-space.
         """
-        if t_stage is None:
-            t_stages = self.t_stages
-        else:
+        if t_stage is not None:
             t_stages = [t_stage]
+        else:
+            t_stages = self.t_stages
 
-        llhs = np.empty(shape=(0, len(self.components)))
-        for subgroup in self.subgroups.values():
-            shape = (len(subgroup.patient_data), len(self.components))
+        sg_keys = list(self.subgroups.keys())
+        sg_idx = slice(None) if subgroup is None else one_slice(sg_keys.index(subgroup))
+        subgroups = list(self.subgroups.values())[sg_idx]
+
+        comp_idx = slice(None) if component is None else one_slice(component)
+        components = self.components[comp_idx]
+
+        llhs = np.empty(shape=(0, len(components)))
+
+        for subgroup in subgroups:
+            shape = (len(subgroup.patient_data), len(components))
             sub_llhs = np.empty(shape=shape)
+
             for t in t_stages:
                 # use the index to align the likelihoods with the patients
                 t_idx = subgroup.patient_data[T_STAGE_COL] == t
                 sub_llhs[t_idx] = np.stack(
-                    [
+                    [  # TODO: Precompute the state-dists for better performance
                         comp.state_dist(t) @ subgroup.diagnosis_matrix(t).T
-                        for comp in self.components
+                        for comp in components
                     ],
                     axis=-1,
                 )
@@ -463,13 +509,15 @@ class LymphMixture(
     def patient_mixture_likelihoods(
         self,
         t_stage: str | None = None,
+        subgroup: list[str] | None = None,
+        component: list[int] | None = None,
         log: bool = True,
         marginalize: bool = False,
     ) -> np.ndarray:
         """Compute the (log-)likelihood of all patients under the mixture model.
 
         This is essentially the (log-)likelihood of all patients given the individual
-        components as computed by :py:meth:`.patient_component_likelihoods` , but
+        components as computed by :py:meth:`.patient_component_likelihoods`, but
         weighted by the mixture coefficients. This means that the returned array when
         ``marginalize`` is set to ``False`` represents the unnormalized expected
         responsibilities of the patients for the components.
@@ -478,38 +526,30 @@ class LymphMixture(
         over the components, effectively marginalizing the components out of the
         likelihoods and yielding the incomplete data likelihood per patient.
         """
-        component_patient_likelihood = self.patient_component_likelihoods(t_stage, log)
-        full_mixture_coefs = self.repeat_mixture_coefs(t_stage, log)
+        component_patient_likelihood = self.patient_component_likelihoods(
+            t_stage=t_stage,
+            subgroup=subgroup,
+            component=component,
+            log=log,
+        )
+        full_mixture_coefs = self.repeat_mixture_coefs(
+            t_stage=t_stage,
+            subgroup=subgroup,
+            log=log,
+        )
+
+        component = slice(None) if component is None else component
+        matching_mixture_coefs = full_mixture_coefs[:, component]
 
         if log:
-            llh = full_mixture_coefs + component_patient_likelihood
+            llh = matching_mixture_coefs + component_patient_likelihood
         else:
-            llh = full_mixture_coefs * component_patient_likelihood
+            llh = matching_mixture_coefs * component_patient_likelihood
 
         if marginalize:
             return np.logaddexp.reduce(llh, axis=1) if log else np.sum(llh, axis=1)
 
         return llh
-
-    def compute_mixture(
-        self,
-        latent: np.ndarray | None = None,
-    ) -> np.ndarray:
-        """Compute the optimal mixture parameters given the latent variables."""
-        mixture_params = np.zeros(self.get_mixture_coefs().shape).T
-
-        if latent is not None:
-            self.set_resps(latent)
-
-        for i, key in enumerate(self.subgroups.keys()):
-            # TODO: I think this can be done more nicely. Shouldn't the subgroups be
-            #       accessible directly? Is it really necessary to store the `split_by`?
-            subgroup = self.patient_data[self.split_by] == key
-            mixture_params[i] = (
-                self.get_resps().loc[subgroup].sum(axis=0) / subgroup.sum()
-            )
-
-        return pd.DataFrame(mixture_params.T, columns=self.subgroups.keys())
 
     def _incomplete_data_likelihood(
         self,
@@ -519,42 +559,6 @@ class LymphMixture(
         """Compute the incomplete data likelihood of the model."""
         llhs = self.patient_mixture_likelihoods(t_stage, log, marginalize=True)
         return np.sum(llhs) if log else np.prod(llhs)
-
-    def component_likelihood(
-        self,
-        component: int,
-        t_stage: str | None = None,
-        log: bool = True,
-    ) -> float:
-        """Compute the complete data (log-)likelihood of a given component.
-
-        Note: For the component-wise optimization ONLY the log-likelihood is used.
-        """
-        resps = self.get_resps(t_stage=t_stage).to_numpy()
-        if t_stage is None:
-            t_stages = self.t_stages
-        else:
-            t_stages = [t_stage]
-
-        # This part here is similar to what we have in patient_component_likelihoods
-        # but only for a single component. The idea is to reduce computation time.
-        # TODO: Think about whether this can be generalized.
-        llhs = np.empty(shape=(0))
-        for subgroup in self.subgroups.values():
-            sub_llhs = np.empty(shape=(len(subgroup.patient_data)))
-            for t in t_stages:
-                # use the index to align the likelihoods with the patients
-                t_idx = subgroup.patient_data[T_STAGE_COL] == t
-                sub_llhs[t_idx] = (
-                    self.components[component].state_dist(t)
-                    @ subgroup.diagnosis_matrix(t).T
-                )
-            llhs = np.hstack([llhs, sub_llhs])
-
-        if log:
-            return np.sum(resps[:, component] * np.log(llhs))
-
-        return np.prod(llhs ** resps[:, component])
 
     def _complete_data_likelihood(
         self,
