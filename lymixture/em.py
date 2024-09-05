@@ -55,7 +55,7 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
 def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, float]:
     """Maximize ``model`` params given expectation of ``latent`` variables."""
     model.set_resps(latent)
-    model.set_mixture_coefs(model.compute_mixture())
+    model.set_mixture_coefs(model.infer_mixture_coefs())
     current_params = _get_params(model)
     lb = np.zeros(shape=len(current_params))
     ub = np.ones(shape=len(current_params))
@@ -87,7 +87,7 @@ def maximization_component_wise(
 ) -> dict[str, float]:
     """Maximize ``model`` params given expectation of ``latent`` variables."""
     model.set_resps(latent)
-    model.set_mixture_coefs(model.compute_mixture())
+    model.set_mixture_coefs(model.infer_mixture_coefs())
 
     def objective(params):
         model.components[component].set_params(*params)
@@ -133,7 +133,7 @@ def sample_model_params(
         latent = model.get_resps()
 
     model.set_resps(latent)
-    model.set_mixture_coefs(model.compute_mixture())
+    model.set_mixture_coefs(model.infer_mixture_coefs())
     current_params = _get_params(model)
 
     ndim = len(current_params)
@@ -168,7 +168,7 @@ def get_complete_samples(model: models.LymphMixture, samples: np.ndarray) -> lis
         latent = expectation(model, params)
         model.set_resps(latent)
         model.set_mixture_coefs(
-            model.compute_mixture(),
+            model.infer_mixture_coefs(),
         )
         parameters.append(model.get_params(as_dict=True))
 

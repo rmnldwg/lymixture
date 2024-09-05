@@ -11,9 +11,8 @@ import lymph
 import numpy as np
 import pandas as pd
 import scipy as sp
+from lyscripts.sample import DummyPool
 from scipy.special import factorial, softmax
-
-from lyscripts.sample import DummyPool, run_mcmc_with_burnin
 
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 logger = logging.getLogger(__name__)
@@ -36,32 +35,29 @@ def late_binomial(support: np.ndarray, p: float = 0.5) -> np.ndarray:
     return binom_pmf(k=support, n=support[-1], p=p)
 
 
-def map_to_simplex(from_unit_cube: np.ndarray | list[float]) -> np.ndarray:
-    """Map from unit cube to simplex.
+def map_to_simplex(from_real: np.ndarray | list[float]) -> np.ndarray:
+    """Map from real numbers to simplex.
 
     The result has one entry more than ``values``.
     The method creates a simplex by adding a dimension which is fixed to zero
     Then the values are run through a softmax function to normalize them.
 
-    >>> sample = [[0,4,3]]
-    >>> mapped = map_to_simplex(sample)
-    >>> mapped
-    array([[0.5       , 0.01798621, 0.04742587],
-           [0.5       , 0.98201379, 0.95257413]])
+    >>> real = [4, 3.5]
+    >>> map_to_simplex(real)
+    array([0.01127223, 0.61544283, 0.37328494])
     """
-    non_normalized = np.zeros((from_unit_cube.shape[0] + 1, from_unit_cube.shape[1]))
-    non_normalized[1:, :] = from_unit_cube
+    non_normalized = np.array([0.0, *from_real])
     return softmax(non_normalized, axis=0)
 
 
-def map_to_unit_cube(from_simplex: np.ndarray | list[float]) -> np.ndarray:
-    """Map from simplex to unit cube.
+def map_to_real(from_simplex: np.ndarray | list[float]) -> np.ndarray:
+    """Map from simplex to real numbers.
 
-    >>> sample = array([[0.5       , 0.01798621, 0.04742587],
-                        [0.5       , 0.98201379, 0.95257413]])
-    >>> map_to_unit_cube(sample)
-    array([[0., 4., 3.]])
+    >>> simplex = [0.01127223, 0.61544283, 0.37328494]
+    >>> np.allclose(map_to_real(simplex), [4, 3.5])
+    True
     """
+    from_simplex = np.array(from_simplex)
     normalizer = 1 / from_simplex[0]
     return np.log(from_simplex[1:] * normalizer)
 
@@ -392,51 +388,21 @@ def create_states(lnls, total_lnls=True):
     return states_all
 
 
-def sample_from_global_model_and_configs(
-    log_prob_fn: callable,
-    ndim: int,
-    sampling_params: dict,
-    backend: emcee.backends.Backend | None = None,
-    starting_point: np.ndarray | None = None,
-    models: list | None = None,
-    verbose: bool = True,
-):
-    """Sample from a global model and configurations."""
-    global MODELS
-    if models is not None:
-        MODELS = models
-
-    if backend is None:
-        backend = emcee.backends.Backend()
-
-    nwalkers = sampling_params["walkers_per_dim"] * ndim
-    thin_by = sampling_params.get("thin_by", 1)
-    sampling_kwargs = {"initial_state": starting_point}
-
-    _ = run_mcmc_with_burnin(
-        nwalkers,
-        ndim,
-        log_prob_fn,
-        nsteps=sampling_params["nsteps"],
-        burnin=sampling_params["nburnin"],
-        persistent_backend=backend,
-        sampling_kwargs=sampling_kwargs,
-        keep_burnin=False,  # To not use backend at all.??
-        thin_by=thin_by,
-        verbose=verbose,
-        npools=0,
-    )
-
-    samples = backend.get_chain(flat=True)
-    log_probs = backend.get_log_prob(flat=True)
-    end_point = backend.get_last_sample()[0]
-
-    return samples, end_point, log_probs
-
-
 def get_param_labels(model):
     """Get parameter labels from a model."""
     return [
         t.replace("primary", "T").replace("_spread", "")
         for t in model.get_params(as_dict=True).keys()
     ]
+
+
+def one_slice(idx: int) -> slice:
+    """Return a slice that selects only one element at the given index.
+
+    Helpful if one wants to select one element, but return it as a list.
+
+    >>> l = [1, 2, 3, 4, 5]
+    >>> l[one_slice(2)]
+    [3]
+    """
+    return slice(idx, idx + 1)
