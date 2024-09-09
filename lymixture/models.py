@@ -215,18 +215,18 @@ class LymphMixture(
         can be used to set the mixture coefficients via the
         :py:meth:`.set_mixture_coefs` method.
         """
-        mixture_params = np.zeros(self.get_mixture_coefs().shape).T
+        mixture_coefs = np.zeros(self.get_mixture_coefs().shape).T
 
         if new_resps is not None:
             self.set_resps(new_resps)
 
         for i, subgroup in enumerate(self.subgroups.keys()):
             num_in_subgroup = len(self.subgroups[subgroup].patient_data)
-            mixture_params[i] = (
+            mixture_coefs[i] = (
                 self.get_resps(subgroup=subgroup).sum(axis=0) / num_in_subgroup
             )
 
-        return pd.DataFrame(mixture_params.T, columns=self.subgroups.keys())
+        return pd.DataFrame(mixture_coefs.T, columns=self.subgroups.keys())
 
     def get_params(
         self,
@@ -470,7 +470,7 @@ class LymphMixture(
     ) -> np.ndarray:
         """Compute the (log-)likelihood of all patients, given the components.
 
-        The returned array has shape ``(num_components, num_patients)`` and contains
+        The returned array has shape ``(num_patients, num_components)`` and contains
         the likelihood of each patient with ``t_stage`` under each component. If ``log``
         is set to ``True``, the likelihoods are returned in log-space.
         """
@@ -503,6 +503,9 @@ class LymphMixture(
                     axis=-1,
                 )
             llhs = np.vstack([llhs, sub_llhs])
+
+        if component is not None:
+            llhs = llhs[:, 0]
 
         return np.log(llhs) if log else llhs
 
@@ -541,6 +544,10 @@ class LymphMixture(
         component = slice(None) if component is None else component
         matching_mixture_coefs = full_mixture_coefs[:, component]
 
+        assert len(component_patient_likelihood.shape) == len(
+            matching_mixture_coefs.shape
+        )
+
         if log:
             llh = matching_mixture_coefs + component_patient_likelihood
         else:
@@ -551,27 +558,42 @@ class LymphMixture(
 
         return llh
 
-    def _incomplete_data_likelihood(
+    def incomplete_data_likelihood(
         self,
         t_stage: str | None = None,
+        subgroup: str | None = None,
+        component: int | None = None,
         log: bool = True,
     ) -> float:
         """Compute the incomplete data likelihood of the model."""
         llhs = self.patient_mixture_likelihoods(
             t_stage=t_stage,
+            subgroup=subgroup,
+            component=component,
             log=log,
             marginalize=True,
         )
         return np.sum(llhs) if log else np.prod(llhs)
 
-    def _complete_data_likelihood(
+    def complete_data_likelihood(
         self,
         t_stage: str | None = None,
+        subgroup: str | None = None,
+        component: int | None = None,
         log: bool = True,
     ) -> float:
         """Compute the complete data likelihood of the model."""
-        llhs = self.patient_mixture_likelihoods(t_stage, log)
-        resps = self.get_resps(t_stage=t_stage).to_numpy()
+        llhs = self.patient_mixture_likelihoods(
+            t_stage=t_stage,
+            subgroup=subgroup,
+            component=component,
+            log=log,
+        )
+        resps = self.get_resps(
+            t_stage=t_stage,
+            subgroup=subgroup,
+            component=component,
+        ).to_numpy()
         return np.sum(resps * llhs) if log else np.prod(llhs**resps)
 
     def likelihood(
@@ -612,7 +634,7 @@ class LymphMixture(
             if np.any(self.get_resps().isna()):
                 raise ValueError("Responsibilities contain NaNs.")
 
-        return self._incomplete_data_likelihood(log=log)
+        return self.incomplete_data_likelihood(log=log)
 
     def state_dist(self, t_stage: str = "early", subgroup=None) -> np.ndarray:
         """Compute the distribution over possible states.

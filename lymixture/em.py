@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndarray:
-    """Compute expected value of latent `model`` variables given the ``params``."""
+    """Compute expected value of latent ``model`` variables given the ``params``."""
     model.set_params(**params)
     llhs = model.patient_mixture_likelihoods(log=False, marginalize=False)
     return utils.normalize(llhs.T, axis=0).T
@@ -68,14 +68,16 @@ def init_callback() -> Callable:
     return log_optimization
 
 
-def neg_component_log_likelihood(
+def neg_complete_component_llh(
     params: np.ndarray,
     model: models.LymphMixture,
     component: int,
 ) -> float:
-    """Return the negative log likelihood of the ``component`` in the ``model``."""
+    """Return the negative complete log likelihood of ``component`` in ``model``."""
     model.components[component].set_params(*params)
-    return -model.patient_component_likelihoods(component=component).sum()
+    result = -model.complete_data_likelihood(component=component)
+    logger.debug(f"Component {component} with params {params} has llh {result}")
+    return result
 
 
 def maximization(
@@ -85,6 +87,7 @@ def maximization(
     """Maximize ``model`` params given expectation of ``latent`` variables."""
     maximized_mixture_coefs = model.infer_mixture_coefs(new_resps=latent)
     model.set_mixture_coefs(maximized_mixture_coefs)
+    model.normalize_mixture_coefs()
 
     for i, component in enumerate(model.components):
         current_params = list(component.get_params(as_dict=False))
@@ -92,7 +95,7 @@ def maximization(
         ub = np.ones(shape=len(current_params))
 
         result = opt.minimize(
-            fun=neg_component_log_likelihood,
+            fun=neg_complete_component_llh,
             args=(model, i),
             x0=current_params,
             bounds=opt.Bounds(lb=lb, ub=ub),
