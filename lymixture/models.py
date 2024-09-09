@@ -346,7 +346,7 @@ class LymphMixture(
         t_stage: str | None = None,
         norm: bool = True,
     ) -> float | pd.Series | pd.DataFrame:
-        """Get the repsonsibility of a ``patient`` for a ``component``.
+        """Get the responsibility of a ``patient`` for a ``component``.
 
         The ``patient`` index enumerates all patients in the mixture model unless
         ``subgroup`` is given, in which case the index runs over the patients in the
@@ -509,8 +509,8 @@ class LymphMixture(
     def patient_mixture_likelihoods(
         self,
         t_stage: str | None = None,
-        subgroup: list[str] | None = None,
-        component: list[int] | None = None,
+        subgroup: str | None = None,
+        component: int | None = None,
         log: bool = True,
         marginalize: bool = False,
     ) -> np.ndarray:
@@ -557,7 +557,11 @@ class LymphMixture(
         log: bool = True,
     ) -> float:
         """Compute the incomplete data likelihood of the model."""
-        llhs = self.patient_mixture_likelihoods(t_stage, log, marginalize=True)
+        llhs = self.patient_mixture_likelihoods(
+            t_stage=t_stage,
+            log=log,
+            marginalize=True,
+        )
         return np.sum(llhs) if log else np.prod(llhs)
 
     def _complete_data_likelihood(

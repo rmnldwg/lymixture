@@ -1,5 +1,7 @@
 """Implements the EM algorithm for the mixture model."""
 
+import logging
+from collections.abc import Callable
 from multiprocessing import Pool
 
 import emcee
@@ -7,6 +9,8 @@ import numpy as np
 from scipy import optimize as opt
 
 from lymixture import models, utils
+
+logger = logging.getLogger(__name__)
 
 
 def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndarray:
@@ -52,79 +56,77 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
         params = np.array(params)
 
 
-def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, float]:
-    """Maximize ``model`` params given expectation of ``latent`` variables."""
-    model.set_resps(latent)
-    model.set_mixture_coefs(model.infer_mixture_coefs())
-    current_params = _get_params(model)
-    lb = np.zeros(shape=len(current_params))
-    ub = np.ones(shape=len(current_params))
+def init_callback() -> Callable:
+    """Return a function that logs the optimization progress."""
+    iteration = 0
 
-    def objective(params: np.ndarray) -> float:
-        _set_params(model, params)
-        # print(f"Optimizing with params: {params}") # DEBUG
-        return -model.likelihood()
+    def log_optimization(xk):
+        nonlocal iteration
+        logger.debug(f"Iteration {iteration} with params: {xk}")
+        iteration += 1
 
-    result = opt.minimize(
-        fun=objective,
-        x0=current_params,
-        method="Powell",
-        bounds=opt.Bounds(
-            lb=lb,
-            ub=ub,
-        ),
-    )
-
-    if result.success:
-        _set_params(model, result.x)
-        return model.get_params(as_dict=True)
-
-    raise ValueError(f"Optimization failed: {result}")
+    return log_optimization
 
 
-def maximization_component_wise(
-    model: models.LymphMixture, latent: np.ndarray
+def neg_component_log_likelihood(
+    params: np.ndarray,
+    model: models.LymphMixture,
+    component: int,
+) -> float:
+    """Return the negative log likelihood of the ``component`` in the ``model``."""
+    model.components[component].set_params(*params)
+    return -model.patient_component_likelihoods(component=component).sum()
+
+
+def maximization(
+    model: models.LymphMixture,
+    latent: np.ndarray,
 ) -> dict[str, float]:
     """Maximize ``model`` params given expectation of ``latent`` variables."""
-    model.set_resps(latent)
-    model.set_mixture_coefs(model.infer_mixture_coefs())
+    maximized_mixture_coefs = model.infer_mixture_coefs(new_resps=latent)
+    model.set_mixture_coefs(maximized_mixture_coefs)
 
-    def objective(params):
-        model.components[component].set_params(*params)
-        return -model.component_likelihood(component=component)
-
-    for component in range(len(model.components)):
-        current_params = list(model.components[component].get_params(as_dict=False))
+    for i, component in enumerate(model.components):
+        current_params = list(component.get_params(as_dict=False))
         lb = np.zeros(shape=len(current_params))
         ub = np.ones(shape=len(current_params))
+
         result = opt.minimize(
-            fun=objective,
+            fun=neg_component_log_likelihood,
+            args=(model, i),
             x0=current_params,
             bounds=opt.Bounds(lb=lb, ub=ub),
             method="Powell",
+            callback=init_callback(),
         )
+
         if result.success:
-            model.components[component].set_params(*result.x)
+            component.set_params(*result.x)
         else:
-            raise ValueError(f"Optimization failed: {result}")
+            raise RuntimeError(f"Optimization failed: {result}")
 
     return model.get_params(as_dict=True)
 
 
 def log_prob_fn(theta, model):
     """Log probability function for the emcee sampler."""
-    _set_params(model, theta)
+    try:
+        _set_params(model, theta)
+    except ValueError:
+        return -np.inf
+
     return model.likelihood(log=True)
 
 
 def sample_model_params(
     model: models.LymphMixture,
-    steps=100,
-    latent=None,
+    steps: int = 100,
+    latent: np.ndarray | None = None,
+    spread_size: float = 1e-5,
 ) -> np.ndarray:
-    """Sample ``model`` params given expectation of latent variables.
+    """Sample params of the components of the ``model`` given latent variables.
 
-    Returns an array with the samples of the model parameters.
+    The samples are drawn from the complete data log-likelihood of the model.
     """
     # NOTE: Right now the samples are very close to each other, such that the resulting
     #       differences in the mixture parameters are very small -> There is probably
@@ -138,8 +140,19 @@ def sample_model_params(
 
     ndim = len(current_params)
     nwalkers = 5 * ndim
-    perturbation = 1e-8 * np.random.randn(nwalkers, ndim)
-    starting_points = np.ones((nwalkers, ndim)) * current_params + perturbation
+    perturbation = spread_size * np.random.randn(nwalkers, ndim)
+    starting_points = current_params + perturbation
+
+    starting_points = np.where(
+        starting_points < 0,
+        0,
+        starting_points,
+    )
+    starting_points = np.where(
+        starting_points > 1,
+        1,
+        starting_points,
+    )
 
     # Pass model as an additional argument to log_prob_fn
     with Pool() as pool:
@@ -160,7 +173,7 @@ def sample_model_params(
 
 
 def get_complete_samples(model: models.LymphMixture, samples: np.ndarray) -> list:
-    """Return the complete set of parameters given a set of model samples."""
+    """For each parameter sample, compute corresponding mixture coefficients."""
     parameters = []
     for i in range(samples.shape[0]):
         _set_params(model, samples[i])

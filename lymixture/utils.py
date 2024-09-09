@@ -167,7 +167,7 @@ def join_with_resps(
     if RESP_COLS in patient_data:
         patient_data.drop(columns=RESP_COLS, inplace=True)
 
-    return patient_data.join(resps).reset_index()
+    return patient_data.join(resps).reset_index(drop=True)
 
 
 def create_synth_data(
