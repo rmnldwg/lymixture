@@ -172,17 +172,23 @@ def sample_model_params(
     return original_sampler.get_chain(discard=0, thin=1, flat=True)
 
 
-def get_complete_samples(model: models.LymphMixture, samples: np.ndarray) -> list:
+def get_complete_samples(
+    model: models.LymphMixture,
+    samples: np.ndarray,
+) -> list[dict[str, float]]:
     """For each parameter sample, compute corresponding mixture coefficients."""
-    parameters = []
-    for i in range(samples.shape[0]):
-        _set_params(model, samples[i])
-        params = model.get_params(as_dict=True)
-        latent = expectation(model, params)
-        model.set_resps(latent)
-        model.set_mixture_coefs(
-            model.infer_mixture_coefs(),
-        )
-        parameters.append(model.get_params(as_dict=True))
+    params = []
 
-    return parameters
+    for sample in samples:
+        _set_params(model, sample)
+        latent = model.patient_mixture_likelihoods(log=False, marginalize=False)
+        latent = utils.normalize(latent.T, axis=0).T
+
+        model.set_resps(latent)
+        mixture_coefs = model.infer_mixture_coefs()
+        model.set_mixture_coefs(mixture_coefs)
+        model.normalize_mixture_coefs()
+
+        params.append(model.get_params())
+
+    return params
