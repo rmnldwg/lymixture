@@ -109,6 +109,7 @@ class LymphMixture(
         return self.components[0].is_trinary
 
     def _init_mixture_coefs(self) -> pd.DataFrame:
+        """Initialize the mixture coefficients for the model."""
         nan_array = np.empty((len(self.components), len(self.subgroups)))
         nan_array[:] = np.nan
         return pd.DataFrame(
@@ -154,6 +155,8 @@ class LymphMixture(
         to slice the mixture coefficients and therefore assign entirely new coefs to
         the entire model, to one subgroup, to one component, or to one component of one
         subgroup.
+
+        Note that after setting, these coefficients are not normalized.
         """
         if getattr(self, "_mixture_coefs", None) is None:
             self._mixture_coefs = self._init_mixture_coefs()
@@ -177,7 +180,11 @@ class LymphMixture(
 
         The result will match the number of patients with tumors of ``t_stage`` that
         are in the specified ``subgroup`` (or all if it is set to ``None``). The
-        mixture coefficients are returned in log-space if ``log`` is set to ``True``.
+        mixture coefficients are returned in log-space if ``log`` is set to ``True``
+
+        This method enables easy multiplication of the mixture coefficients with the
+        likelihoods of the patients under the components as in the method
+        :py:meth:`.patient_mixture_likelihoods`.
         """
         result = np.empty(shape=(0, len(self.components)))
 
@@ -397,6 +404,9 @@ class LymphMixture(
         Note that these responsibilities essentially become the latent variables
         of the model or the expectation values of the latent variables (depending on
         whether or not they are "hardened", see :py:meth:`.harden_responsibilities`).
+
+        Also, like in the :py:meth:`.set_mixtures_coefs` method, the responsibilities
+        are not normalized after setting them.
         """
         if isinstance(new_resps, pd.DataFrame):
             new_resps = new_resps.to_numpy()

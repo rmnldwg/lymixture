@@ -13,18 +13,11 @@ from lymixture import models, utils
 logger = logging.getLogger(__name__)
 
 
-def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndarray:
-    """Compute expected value of latent ``model`` variables given the ``params``."""
-    model.set_params(**params)
-    llhs = model.patient_mixture_likelihoods(log=False, marginalize=False)
-    return utils.normalize(llhs.T, axis=0).T
-
-
 def _get_params(model: models.LymphMixture) -> np.ndarray:
     """Return the params of ``model``.
 
     This function is very similar to the :py:meth:`.models.LymphMixture.get_params`
-    method. Also, it just returns them as a 1D array, instead of a dictionary.
+    method. But it just returns them as a 1D array, instead of a dictionary.
     """
     params = []
     if model.universal_p:
@@ -42,9 +35,8 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
     """Set the params of ``model`` from ``params``.
 
     This function is very similar to the :py:meth:`.models.LymphMixture.set_params`
-    method.
-
-    Also, it does not accept a dictionary of parameters, but a 1D array.
+    method. Except that it does not accept a dictionary of parameters, but only a 1D
+    array.
     """
     if model.universal_p:
         for comp in model.components:
@@ -54,6 +46,17 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
         for comp in model.components:
             params = comp.set_params(*params)
         params = np.array(params)
+
+
+def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndarray:
+    """Compute expected value of latent ``model`` variables given the ``params``.
+
+    This marks the E-step of the EM algorithm. The returned expected values are also
+    often called responsibilities.
+    """
+    model.set_params(**params)
+    llhs = model.patient_mixture_likelihoods(log=False, marginalize=False)
+    return utils.normalize(llhs.T, axis=0).T
 
 
 def init_callback() -> Callable:
@@ -68,14 +71,17 @@ def init_callback() -> Callable:
     return log_optimization
 
 
-def neg_complete_component_llh(
+def _neg_complete_component_llh(
     params: np.ndarray,
     model: models.LymphMixture,
     component: int,
 ) -> float:
-    """Return the negative complete log likelihood of ``component`` in ``model``."""
+    """Return the negative complete log likelihood of ``component`` in ``model``.
+
+    This function is used in the M-step of the EM algorithm.
+    """
     model.components[component].set_params(*params)
-    result = -model.complete_data_likelihood(component=component)
+    result = - model.complete_data_likelihood(component=component)
     logger.debug(f"Component {component} with params {params} has llh {result}")
     return result
 
@@ -84,7 +90,12 @@ def maximization(
     model: models.LymphMixture,
     latent: np.ndarray,
 ) -> dict[str, float]:
-    """Maximize ``model`` params given expectation of ``latent`` variables."""
+    """Maximize ``model`` params given expectation of ``latent`` variables.
+
+    This is the corresponding M-step to the :py:func:`.expectation` of the EM
+    algorithm. It first maximizes the mixture coefficients analytically and then
+    optimizes the model parameters of all components sequentially.
+    """
     maximized_mixture_coefs = model.infer_mixture_coefs(new_resps=latent)
     model.set_mixture_coefs(maximized_mixture_coefs)
     model.normalize_mixture_coefs()
@@ -95,7 +106,7 @@ def maximization(
         ub = np.ones(shape=len(current_params))
 
         result = opt.minimize(
-            fun=neg_complete_component_llh,
+            fun=_neg_complete_component_llh,
             args=(model, i),
             x0=current_params,
             bounds=opt.Bounds(lb=lb, ub=ub),
@@ -159,27 +170,31 @@ def sample_model_params(
 
     # Pass model as an additional argument to log_prob_fn
     with Pool() as pool:
-        original_sampler = emcee.EnsembleSampler(
+        sampler = emcee.EnsembleSampler(
             nwalkers,
             ndim,
             log_prob_fn,
             args=(model,),  # Pass model here
             pool=pool,
         )
-        original_sampler.run_mcmc(
+        sampler.run_mcmc(
             initial_state=starting_points,
             nsteps=steps,
             progress=True,
         )
 
-    return original_sampler.get_chain(discard=0, thin=1, flat=True)
+    return sampler.get_chain(discard=0, thin=1, flat=True)
 
 
-def get_complete_samples(
+def complete_samples(
     model: models.LymphMixture,
     samples: np.ndarray,
 ) -> list[dict[str, float]]:
-    """For each parameter sample, compute corresponding mixture coefficients."""
+    """Compute the corresponding mixture coefficients for each of the ``samples``.
+
+    The result is a complete set of mixture coefficients and model parameters for each
+    drawn samples, i.e. a fully probabilistic representation of the model.
+    """
     params = []
 
     for sample in samples:
