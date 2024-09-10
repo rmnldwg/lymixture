@@ -6,7 +6,6 @@ This was originally created by [Julian Brönnimann] as part of his Master's thes
 
 [Julian Brönnimann]: https://github.com/julianbro
 
-
 ## Installation
 
 At the moment, you need to install the package from source. To do so, first clone the repository and `cd` into it:
@@ -16,7 +15,7 @@ git clone https://github.com/rmnldwg/lymixture
 cd lymixture
 ```
 
-Then, preferrably inside a virtual environment, like [`venv`], install the package via
+Then, preferably inside a virtual environment, like [`venv`], install the package via
 
 ```
 pip install .
@@ -24,7 +23,6 @@ pip install .
 
 [`venv`]: https://docs.python.org/3.10/library/venv.html
 
-
 ## Documentation
 
-coming soon...
+The docs for this package's API can be found on <https://lymixture.readthedocs.io> (not yet).

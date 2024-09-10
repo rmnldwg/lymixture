@@ -5,10 +5,14 @@ mixture of hidden Markov models as hey are implemented in the `lymph-model` pack
 
 import logging
 
+from lymixture._version import version
+from lymixture.models import LymphMixture
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-
-from lymixture.models import LymphMixture
-
 __all__ = ["LymphMixture"]
+__version__ = version
+__author__ = "Roman Ludwig"
+__email__ = "roman.ludwig@usz.ch"
+__uri__ = "https://github.com/rmnldwg/lymixture"
