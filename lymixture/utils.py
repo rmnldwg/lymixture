@@ -1,10 +1,8 @@
-"""
-Module with utilities for the mixture model package.
-"""
-# pylint: disable=logging-fstring-interpolation
+"""Module with utilities for the mixture model package."""
 
 import itertools
 import logging
+import multiprocessing as mp
 import os
 import warnings
 
@@ -13,8 +11,8 @@ import lymph
 import numpy as np
 import pandas as pd
 import scipy as sp
-from lyscripts.sample import DummyPool, run_mcmc_with_burnin
-from scipy.special import factorial
+from lyscripts.sample import DummyPool
+from scipy.special import factorial, softmax
 
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 logger = logging.getLogger(__name__)
@@ -23,8 +21,8 @@ RESP_COLS = ("_mixture", "responsibility")
 T_STAGE_COL = ("_model", "#", "t_stage")
 
 
-def binom_pmf(k: np.ndarray, n: int, p: float):
-    """Binomial PMF"""
+def binom_pmf(k: np.ndarray, n: int, p: float) -> np.ndarray:
+    """Compute binomial PMF fast."""
     if p > 1.0 or p < 0.0:
         raise ValueError("Binomial prob must be btw. 0 and 1")
     q = 1.0 - p
@@ -37,42 +35,31 @@ def late_binomial(support: np.ndarray, p: float = 0.5) -> np.ndarray:
     return binom_pmf(k=support, n=support[-1], p=p)
 
 
-def map_to_simplex(from_unit_cube: np.ndarray | list[float]) -> np.ndarray:
-    """Map from unit cube to simplex.
+def map_to_simplex(from_real: np.ndarray | list[float]) -> np.ndarray:
+    """Map from real numbers to simplex.
 
-    The result has one entry more than ``values``. The method comes from
-    https://cs.stackexchange.com/a/3229
+    The result has one entry more than ``values``.
+    The method creates a simplex by adding a dimension which is fixed to zero
+    Then the values are run through a softmax function to normalize them.
 
-    Example:
-
-    >>> sample = [0.4, 0.7, 0.12, 0.9]
-    >>> mapped = map_to_simplex(sample)
-    >>> mapped
-    array([0.12, 0.28, 0.3 , 0.2 , 0.1 ])
-    >>> sum(mapped) == 1.
-    True
-    >>> len(sample) == len(mapped) - 1
-    True
-    >>> arr2d = np.array([[0.4, 0.7, 0.12, 0.9 ],
-    ...                   [0.1, 0.2, 0.3 , 0.15],
-    ...                   [0.2, 0.3, 0.4 , 0.5 ]])
-    >>> np.apply_along_axis(map_to_simplex, 1, arr2d)
-    array([[0.12, 0.28, 0.3 , 0.2 , 0.1 ],
-           [0.1 , 0.05, 0.05, 0.1 , 0.7 ],
-           [0.2 , 0.1 , 0.1 , 0.1 , 0.5 ]])
+    >>> real = [4, 3.5]
+    >>> map_to_simplex(real)
+    array([0.01127223, 0.61544283, 0.37328494])
     """
-    sorted_values = np.sort([0., *from_unit_cube, 1.])
-    return sorted_values[1:] - sorted_values[:-1]
+    non_normalized = np.array([0.0, *from_real])
+    return softmax(non_normalized, axis=0)
 
 
-def map_to_unit_cube(from_simplex: np.ndarray | list[float]) -> np.ndarray:
-    """Map from simplex to unit cube.
+def map_to_real(from_simplex: np.ndarray | list[float]) -> np.ndarray:
+    """Map from simplex to real numbers.
 
-    >>> sample = [0.12, 0.28, 0.3, 0.2, 0.1]
-    >>> map_to_unit_cube(sample)
-    array([0.12, 0.4 , 0.7 , 0.9 ])
+    >>> simplex = [0.01127223, 0.61544283, 0.37328494]
+    >>> np.allclose(map_to_real(simplex), [4, 3.5])
+    True
     """
-    return np.cumsum(from_simplex)[:-1]
+    from_simplex = np.array(from_simplex)
+    normalizer = 1 / from_simplex[0]
+    return np.log(from_simplex[1:] * normalizer)
 
 
 def normalize(values: np.ndarray, axis: int) -> np.ndarray:
@@ -107,10 +94,10 @@ def harden(values: np.ndarray, axis: int) -> np.ndarray:
     array([0, 0, 1, 0])
     """
     maxdim = len(values.shape) - 1
-    idx = np.argmax(values, axis=axis)                      # one dim less than `values`
-    one_hot = np.eye(values.shape[axis], dtype=int)[idx]    # right dim, but wrong order
+    idx = np.argmax(values, axis=axis)  # one dim less than `values`
+    one_hot = np.eye(values.shape[axis], dtype=int)[idx]  # right dim, but wrong order
     dim_sort = (*range(axis), maxdim, *range(axis, maxdim))
-    return one_hot.transpose(*dim_sort)                     # right order
+    return one_hot.transpose(*dim_sort)  # right order
 
 
 def create_models(
@@ -140,7 +127,9 @@ def create_models(
     if model_kwargs is None:
         model_kwargs = {}
 
-    diagnostic_spsn = {"max_llh": [1.0, 1.0],}
+    diagnostic_spsn = {
+        "max_llh": [1.0, 1.0],
+    }
     time_steps = np.arange(max_time + 1)
     early_prior = sp.stats.binom.pmf(time_steps, max_time, first_binom_prob)
 
@@ -166,9 +155,9 @@ def join_with_resps(
     resps: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """Join patient data with empty responsibilities (and reset index)."""
-    mixture_columns = pd.MultiIndex.from_tuples([
-        (*RESP_COLS, i) for i in range(num_components)
-    ])
+    mixture_columns = pd.MultiIndex.from_tuples(
+        [(*RESP_COLS, i) for i in range(num_components)]
+    )
 
     if resps is None:
         resps = np.empty(shape=(len(patient_data), num_components))
@@ -178,7 +167,7 @@ def join_with_resps(
     if RESP_COLS in patient_data:
         patient_data.drop(columns=RESP_COLS, inplace=True)
 
-    return patient_data.join(resps).reset_index()
+    return patient_data.join(resps).reset_index(drop=True)
 
 
 def create_synth_data(
@@ -196,28 +185,11 @@ def create_synth_data(
         int(n * (1 - ratio)), t_stage_dist, column_index_levels=header
     )
 
-    data_synth_s2 = pd.concat([data_synth_s0_30, data_synth_s1_30], ignore_index=True)
-    return data_synth_s2
-
-
-def convert_params(params, n_clusters, n_subsites):
-    n_mixing = (n_clusters - 1) * (n_subsites)
-    p_mixing = params[-n_mixing:]
-    p_model = params[:-n_mixing]
-    params_model = [
-        [params[i + j] for j in range(n_clusters)]
-        for i in range(0, len(p_model), n_clusters)
-    ]
-
-    params_mixing = [
-        [p_mixing[i + j] for j in range(n_clusters - 1)]
-        for i in range(0, len(p_mixing), n_clusters - 1)
-    ]
-    params_mixing = [[*mp, 1 - np.sum(mp)] for mp in params_mixing]
-    return params_model, params_mixing
+    return pd.concat([data_synth_s0_30, data_synth_s1_30], ignore_index=True)
 
 
 ParamDict = dict[str, float]
+
 
 def split_over_components(
     params: ParamDict,
@@ -239,13 +211,14 @@ def split_over_components(
         try:
             idx, param_key = key.split("_", maxsplit=1)
             params_dict_list[int(idx)][param_key] = value
-        except ValueError:   # occurs when no '_' in key OR when int(idx) fails
+        except ValueError:  # occurs when no '_' in key OR when int(idx) fails
             global_params[key] = value
 
     return params_dict_list, global_params
 
 
 def emcee_sampling(llh_function, n_params, sample_name, llh_args=None):
+    """Sample from the given likelihood function using emcee."""
     nwalkers, nstep, burnin = 20 * n_params, 1000, 1500
     thin_by = 1
     logger.info(f"Dimension: {n_params} with n walkers: {nwalkers}")
@@ -283,14 +256,14 @@ def emcee_sampling(llh_function, n_params, sample_name, llh_args=None):
             backend=None,
             pool=pool,
         )
-        sampling_results = original_sampler_mp.run_mcmc(
+        _sampling_results = original_sampler_mp.run_mcmc(
             initial_state=last_sample, nsteps=nstep, progress=True, thin_by=thin_by
         )
 
         ar = np.mean(original_sampler_mp.acceptance_fraction)
         logger.info(f"the HMM sampler for model accepted {ar * 100 :.2f} % of samples.")
         samples = original_sampler_mp.get_chain(flat=True)
-        np.save(f"./samples/" + output_name, samples)
+        np.save("./samples/" + output_name, samples)
         # plots["acor_times"].append(burnin_info["acor_times"][-1])
         # plots["accept_rates"].append(burnin_info["accept_rates"][-1])
     return samples
@@ -305,6 +278,7 @@ def emcee_sampling_ext(
     start_with=None,
     llh_args=None,
 ):
+    """Sample from the given likelihood function using emcee."""
     nwalkers = 20 * n_params
     burnin = 1000 if n_burnin is None else n_burnin
     nstep = 1000 if n_step is None else n_step
@@ -333,7 +307,7 @@ def emcee_sampling_ext(
             args=llh_args,
             pool=pool,
         )
-        burnin_results = burnin_sampler.run_mcmc(
+        _burnin_results = burnin_sampler.run_mcmc(
             initial_state=starting_points, nsteps=burnin, progress=True
         )
 
@@ -351,7 +325,7 @@ def emcee_sampling_ext(
             backend=None,
             pool=pool,
         )
-        sampling_results = original_sampler_mp.run_mcmc(
+        _sampling_results = original_sampler_mp.run_mcmc(
             initial_state=starting_points,
             nsteps=nstep,
             progress=True,
@@ -364,22 +338,24 @@ def emcee_sampling_ext(
         log_probs = original_sampler_mp.get_log_prob(flat=True)
         end_point = original_sampler_mp.get_last_sample()[0]
         if output_name is not None:
-            np.save(f"./samples/" + output_name, samples)
+            np.save("./samples/" + output_name, samples)
         # plots["acor_times"].append(burnin_info["acor_times"][-1])
         # plots["accept_rates"].append(burnin_info["accept_rates"][-1])
     return samples, end_point, log_probs
 
 
 def convert_lnl_to_filename(lnls):
+    """Convert a list of lymph node levels to a filename."""
     if not lnls:
-        return "Empty_List"
+        return "empty_list"
     if len(lnls) == 1:
         return lnls[0]
 
-    return f"{lnls[0]}_to_{lnls[-1]}"
+    return f"{lnls[0]}to{lnls[-1]}"
 
 
 def reverse_dict(original_dict: dict) -> dict:
+    """Reverse the keys and values of a dictionary."""
     reverse_dict = {}
     for k, v in original_dict.items():
         if isinstance(v, list):
@@ -412,50 +388,21 @@ def create_states(lnls, total_lnls=True):
     return states_all
 
 
-def sample_from_global_model_and_configs(
-    log_prob_fn: callable,
-    ndim: int,
-    sampling_params: dict,
-    backend: emcee.backends.Backend | None = None,
-    starting_point: np.ndarray | None = None,
-    models: list | None = None,
-    verbose: bool = True,
-):
-    global MODELS
-    if models is not None:
-        MODELS = models
-
-    if backend is None:
-        backend = emcee.backends.Backend()
-
-    nwalkers = sampling_params["walkers_per_dim"] * ndim
-    thin_by = sampling_params.get("thin_by", 1)
-    sampling_kwargs = {"initial_state": starting_point}
-
-    _ = run_mcmc_with_burnin(
-        nwalkers,
-        ndim,
-        log_prob_fn,
-        nsteps=sampling_params["nsteps"],
-        burnin=sampling_params["nburnin"],
-        persistent_backend=backend,
-        sampling_kwargs=sampling_kwargs,
-        keep_burnin=False,  # To not use backend at all.??
-        thin_by=thin_by,
-        verbose=verbose,
-        npools=0,
-    )
-
-    samples = backend.get_chain(flat=True)
-    log_probs = backend.get_log_prob(flat=True)
-    end_point = backend.get_last_sample()[0]
-
-    return samples, end_point, log_probs
-
-
 def get_param_labels(model):
     """Get parameter labels from a model."""
     return [
         t.replace("primary", "T").replace("_spread", "")
         for t in model.get_params(as_dict=True).keys()
     ]
+
+
+def one_slice(idx: int) -> slice:
+    """Return a slice that selects only one element at the given index.
+
+    Helpful if one wants to select one element, but return it as a list.
+
+    >>> l = [1, 2, 3, 4, 5]
+    >>> l[one_slice(2)]
+    [3]
+    """
+    return slice(idx, idx + 1)

@@ -1,18 +1,17 @@
-"""
-Fixtures and helpers for the unit tests.
-"""
+"""Fixtures and helpers for the unit tests."""
+
 import unittest
 import warnings
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 import scipy as sp
-from lymph import diagnosis_times, modalities
-
 from lymixture import LymphMixture
 from lymixture.utils import map_to_simplex
+from lymph import diagnosis_times, modalities
 
 SIMPLE_SUBSITE = ("tumor", "1", "simple_subsite")
 SUBSITE = ("tumor", "1", "subsite")
@@ -69,11 +68,13 @@ def _create_random_frozen_dist(
     unnormalized = rng.random(size=max_time + 1)
     return unnormalized / np.sum(unnormalized)
 
+
 def _create_random_parametric_dist(
     max_time: int,
     rng: np.random.Generator = RNG,
 ) -> diagnosis_times.Distribution:
     """Create a binomial diagnosis time distribution with random params."""
+
     def _pmf(support: np.ndarray, p: float = rng.random()) -> np.ndarray:
         return sp.stats.binom.pmf(support, p=p, n=max_time + 1)
 
@@ -81,6 +82,7 @@ def _create_random_parametric_dist(
         distribution=_pmf,
         max_time=max_time,
     )
+
 
 def create_random_dist(
     type_: str,
@@ -101,7 +103,7 @@ def get_patient_data(do_simplify_subsite: bool = True) -> pd.DataFrame:
     """Load the patient data for the tests and simplify the ICD codes."""
     patient_data = pd.read_csv(
         Path(__file__).parent / "data" / "patients.csv",
-        header=[0,1,2],
+        header=[0, 1, 2],
     )
 
     if do_simplify_subsite:
@@ -144,7 +146,6 @@ class MixtureModelFixture(unittest.TestCase):
                 self.patient_data,
                 split_by=SIMPLE_SUBSITE,
             )
-
 
     def setup_responsibilities(self):
         """Initialize a set of responsibilities for the mixture model."""

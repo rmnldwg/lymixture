@@ -1,10 +1,12 @@
 """
 Generate synthetic data for testing.
 """
+
 import argparse
 from collections import namedtuple
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -46,37 +48,59 @@ def create_parser() -> argparse.ArgumentParser:
     """Create argument parser."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "-1", "--num-c1", type=int, default=100,
+        "-1",
+        "--num-c1",
+        type=int,
+        default=100,
         help="Number of samples for the first dataset.",
     )
     parser.add_argument(
-        "-2", "--num-c2", type=int, default=100,
+        "-2",
+        "--num-c2",
+        type=int,
+        default=100,
         help="Number of samples for the second dataset.",
     )
     parser.add_argument(
-        "-3", "--num-c3", type=int, default=100,
+        "-3",
+        "--num-c3",
+        type=int,
+        default=100,
         help="Number of samples for the third dataset.",
     )
     parser.add_argument(
-        "-m", "--mix", type=float, default=0.5,
+        "-m",
+        "--mix",
+        type=float,
+        default=0.5,
         help="Mixing ratio for the third dataset.",
     )
     parser.add_argument(
-        "-t", "--tstage-ratio", type=float, default=0.6,
+        "-t",
+        "--tstage-ratio",
+        type=float,
+        default=0.6,
         help="Ratio of early vs late stage patients.",
     )
     parser.add_argument(
-        "-o", "--output", type=Path, default="mixture.csv",
+        "-o",
+        "--output",
+        type=Path,
+        default="mixture.csv",
         help="Output file for the mixture dataset.",
     )
     parser.add_argument(
-        "-s", "--seed", type=int, default=42,
+        "-s",
+        "--seed",
+        type=int,
+        default=42,
         help="Seed for the random number generator.",
     )
     return parser
 
 
 ModalityDict = dict[str, dict[str, float | Literal["clinical", "pathological"]]]
+
 
 def create_model(
     model_kwargs: dict[str, Any] | None = None,
@@ -117,10 +141,14 @@ def draw_datasets(
         stage_dist=[tstage_ratio, 1 - tstage_ratio],
         rng=rng,
     )
-    c3_data = pd.concat([
-        c1_data.iloc[num_c1:],
-        c2_data.iloc[num_c2:],
-    ], ignore_index=True, axis=0)
+    c3_data = pd.concat(
+        [
+            c1_data.iloc[num_c1:],
+            c2_data.iloc[num_c2:],
+        ],
+        ignore_index=True,
+        axis=0,
+    )
     c1_data = c1_data.iloc[:num_c1]
     c2_data = c2_data.iloc[:num_c2]
 
@@ -132,7 +160,7 @@ def draw_datasets(
 
 
 def main() -> None:
-    """Generate three datasets: Two with distrinct params and one as a mix of both."""
+    """Generate three datasets: Two with distinct params and one as a mix of both."""
     parser = create_parser()
     args = parser.parse_args()
     rng = np.random.default_rng(args.seed)

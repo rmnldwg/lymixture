@@ -1,76 +1,212 @@
-"""
-Implement the EM algorithm for the mixture model.
-"""
+"""Implements the EM algorithm for the mixture model."""
+
+import logging
+from collections.abc import Callable
+from multiprocessing import Pool
+
+import emcee
 import numpy as np
 from scipy import optimize as opt
 
 from lymixture import models, utils
 
-
-def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndarray:
-    """Compute expected value of latent `model`` variables given the ``params``."""
-    model.set_params(**params)
-    llhs = model.patient_mixture_likelihoods(log=False, marginalize=False)
-    return utils.normalize(llhs.T, axis=0).T
+logger = logging.getLogger(__name__)
 
 
 def _get_params(model: models.LymphMixture) -> np.ndarray:
     """Return the params of ``model``.
 
     This function is very similar to the :py:meth:`.models.LymphMixture.get_params`
-    method, except that it returns the mixture coefficients in the unit cube, instead
-    of the simplex. Also, it just returns them as a 1D array, instead of a dictionary.
+    method. But it just returns them as a 1D array, instead of a dictionary.
     """
     params = []
-    for comp in model.components:
-        params += list(comp.get_spread_params(as_dict=False))
+    if model.universal_p:
+        for comp in model.components:
+            params += list(comp.get_spread_params(as_dict=False))
 
-    params += list(model.get_distribution_params(as_dict=False))
-    mixture_coefs = model.get_mixture_coefs().to_numpy()
-    _shape = mixture_coefs.shape
-    mixture_coefs = np.apply_along_axis(utils.map_to_unit_cube, 0, mixture_coefs)
-    return np.concatenate([params, mixture_coefs.flatten()])
+        params += list(model.get_distribution_params(as_dict=False))
+    else:
+        for comp in model.components:
+            params += list(comp.get_params(as_dict=False))
+    return params
 
 
 def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
     """Set the params of ``model`` from ``params``.
 
     This function is very similar to the :py:meth:`.models.LymphMixture.set_params`
-    method, except that it expects the mixture coefficients to from the unit cube,
-    which will then be mapped to the simplex.
-
-    Also, it does not accept a dictionary of parameters, but a 1D array.
+    method. Except that it does not accept a dictionary of parameters, but only a 1D
+    array.
     """
-    for comp in model.components:
-        params = comp.set_spread_params(*params)
-    params = np.array(model.set_distribution_params(*params))
+    if model.universal_p:
+        for comp in model.components:
+            params = comp.set_spread_params(*params)
+        params = np.array(model.set_distribution_params(*params))
+    else:
+        for comp in model.components:
+            params = comp.set_params(*params)
+        params = np.array(params)
 
-    unit_cube = params.reshape((len(model.components) - 1, len(model.subgroups)))
-    simplex = np.apply_along_axis(utils.map_to_simplex, 0, unit_cube)
-    model.set_mixture_coefs(simplex)
+
+def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndarray:
+    """Compute expected value of latent ``model`` variables given the ``params``.
+
+    This marks the E-step of the EM algorithm. The returned expected values are also
+    often called responsibilities.
+    """
+    model.set_params(**params)
+    llhs = model.patient_mixture_likelihoods(log=False, marginalize=False)
+    return utils.normalize(llhs.T, axis=0).T
 
 
-def maximization(model: models.LymphMixture, latent: np.ndarray) -> dict[str, float]:
-    """Maximize ``model`` params given expectation of ``latent`` variables."""
+def init_callback() -> Callable:
+    """Return a function that logs the optimization progress."""
+    iteration = 0
+
+    def log_optimization(xk):
+        nonlocal iteration
+        logger.debug(f"Iteration {iteration} with params: {xk}")
+        iteration += 1
+
+    return log_optimization
+
+
+def _neg_complete_component_llh(
+    params: np.ndarray,
+    model: models.LymphMixture,
+    component: int,
+) -> float:
+    """Return the negative complete log likelihood of ``component`` in ``model``.
+
+    This function is used in the M-step of the EM algorithm.
+    """
+    model.components[component].set_params(*params)
+    result = - model.complete_data_likelihood(component=component)
+    logger.debug(f"Component {component} with params {params} has llh {result}")
+    return result
+
+
+def maximization(
+    model: models.LymphMixture,
+    latent: np.ndarray,
+) -> dict[str, float]:
+    """Maximize ``model`` params given expectation of ``latent`` variables.
+
+    This is the corresponding M-step to the :py:func:`.expectation` of the EM
+    algorithm. It first maximizes the mixture coefficients analytically and then
+    optimizes the model parameters of all components sequentially.
+    """
+    maximized_mixture_coefs = model.infer_mixture_coefs(new_resps=latent)
+    model.set_mixture_coefs(maximized_mixture_coefs)
+    model.normalize_mixture_coefs()
+
+    for i, component in enumerate(model.components):
+        current_params = list(component.get_params(as_dict=False))
+        lb = np.zeros(shape=len(current_params))
+        ub = np.ones(shape=len(current_params))
+
+        result = opt.minimize(
+            fun=_neg_complete_component_llh,
+            args=(model, i),
+            x0=current_params,
+            bounds=opt.Bounds(lb=lb, ub=ub),
+            method="Powell",
+            callback=init_callback(),
+        )
+
+        if result.success:
+            component.set_params(*result.x)
+        else:
+            raise RuntimeError(f"Optimization failed: {result}")
+
+    return model.get_params(as_dict=True)
+
+
+def log_prob_fn(theta, model):
+    """Log probability function for the emcee sampler."""
+    try:
+        _set_params(model, theta)
+    except ValueError:
+        return -np.inf
+
+    return model.likelihood(log=True)
+
+
+def sample_model_params(
+    model: models.LymphMixture,
+    steps: int = 100,
+    latent: np.ndarray | None = None,
+    spread_size: float = 1e-5,
+) -> np.ndarray:
+    """Sample params of the components of the ``model`` given latent variables.
+
+    The samples are drawn from the complete data log-likelihood of the model.
+    """
+    # NOTE: Right now the samples are very close to each other, such that the resulting
+    #       differences in the mixture parameters are very small -> There is probably
+    #       an error here.
+    if latent is None:
+        latent = model.get_resps()
+
     model.set_resps(latent)
+    model.set_mixture_coefs(model.infer_mixture_coefs())
     current_params = _get_params(model)
 
-    def objective(params: np.ndarray) -> float:
-        _set_params(model, params)
-        return -model.likelihood()
+    ndim = len(current_params)
+    nwalkers = 5 * ndim
+    perturbation = spread_size * np.random.randn(nwalkers, ndim)
+    starting_points = current_params + perturbation
 
-    result = opt.minimize(
-        fun=objective,
-        x0=current_params,
-        method="Powell",
-        bounds=opt.Bounds(
-            lb=np.zeros(shape=len(current_params)),
-            ub=np.ones(shape=len(current_params)),
-        ),
+    starting_points = np.where(
+        starting_points < 0,
+        0,
+        starting_points,
+    )
+    starting_points = np.where(
+        starting_points > 1,
+        1,
+        starting_points,
     )
 
-    if result.success:
-        _set_params(model, result.x)
-        return model.get_params(as_dict=True)
-    else:
-        raise ValueError(f"Optimization failed: {result}")
+    # Pass model as an additional argument to log_prob_fn
+    with Pool() as pool:
+        sampler = emcee.EnsembleSampler(
+            nwalkers,
+            ndim,
+            log_prob_fn,
+            args=(model,),  # Pass model here
+            pool=pool,
+        )
+        sampler.run_mcmc(
+            initial_state=starting_points,
+            nsteps=steps,
+            progress=True,
+        )
+
+    return sampler.get_chain(discard=0, thin=1, flat=True)
+
+
+def complete_samples(
+    model: models.LymphMixture,
+    samples: np.ndarray,
+) -> list[dict[str, float]]:
+    """Compute the corresponding mixture coefficients for each of the ``samples``.
+
+    The result is a complete set of mixture coefficients and model parameters for each
+    drawn samples, i.e. a fully probabilistic representation of the model.
+    """
+    params = []
+
+    for sample in samples:
+        _set_params(model, sample)
+        latent = model.patient_mixture_likelihoods(log=False, marginalize=False)
+        latent = utils.normalize(latent.T, axis=0).T
+
+        model.set_resps(latent)
+        mixture_coefs = model.infer_mixture_coefs()
+        model.set_mixture_coefs(mixture_coefs)
+        model.normalize_mixture_coefs()
+
+        params.append(model.get_params())
+
+    return params
