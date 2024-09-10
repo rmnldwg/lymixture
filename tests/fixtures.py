@@ -109,7 +109,7 @@ def get_patient_data(do_simplify_subsite: bool = True) -> pd.DataFrame:
     if do_simplify_subsite:
         patient_data[SIMPLE_SUBSITE] = patient_data[SUBSITE].apply(simplify_subsite)
 
-    return patient_data
+    return patient_data.copy()
 
 
 class MixtureModelFixture(unittest.TestCase):

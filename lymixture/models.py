@@ -644,6 +644,8 @@ class LymphMixture(
             if np.any(self.get_resps().isna()):
                 raise ValueError("Responsibilities contain NaNs.")
 
+            return self.complete_data_likelihood(log=log)
+
         return self.incomplete_data_likelihood(log=log)
 
     def state_dist(self, t_stage: str = "early", subgroup=None) -> np.ndarray:
