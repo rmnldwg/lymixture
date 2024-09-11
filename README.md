@@ -1,9 +1,12 @@
-# `lymixture`
+# lyMixture
 
-Extension to the [lymph-model](https://lymph-model.readthedocs.io) and lyscripts package.
+Extension to the [`lymph`] package.
+
+The core idea is to model the different tumor subsites lymphatic metastatic spread in head and neck cancer as a mixture of models as defined in the [`lymph`] package.
 
 This was originally created by [Julian Brönnimann] as part of his Master's thesis in the medical physics research group of Prof. Jan Unkelbach at the University Hospital Zurich.
 
+[`lymph`]: https://lymph-model.readthedocs.io
 [Julian Brönnimann]: https://github.com/julianbro
 
 ## Installation
