@@ -31,6 +31,12 @@ test = [
     "jupyter",
     "pytest",
 ]
+docs = [
+    "sphinx",
+    "sphinx-book-theme",
+    "sphinx-autodoc-typehints",
+    "myst-nb",
+]
 
 [tool.setuptools_scm]
 write_to = "lymixture/_version.py"
