@@ -1,4 +1,9 @@
-"""Implements the EM algorithm for the mixture model."""
+"""Implements the `EM algorithm`_ for the mixture model.
+
+Using the class :py:class:`.models.LymphMixture` and its methods, this module provides
+functions to compute the expectation and maximization steps of the `EM algorithm`_.
+
+.. _EM algorithm: https://en.wikipedia.org/wiki/Expectation%E2%80%93maximization_algorithm"""
 
 import logging
 from collections.abc import Callable
@@ -16,8 +21,10 @@ logger = logging.getLogger(__name__)
 def _get_params(model: models.LymphMixture) -> np.ndarray:
     """Return the params of ``model``.
 
-    This function is very similar to the :py:meth:`.models.LymphMixture.get_params`
-    method. But it just returns them as a 1D array, instead of a dictionary.
+    .. seealso::
+        This function is very similar to the :py:meth:`.models.LymphMixture.get_params`
+        method. Except that it does not accept a dictionary of parameters, but only a 1D
+        array.
     """
     params = []
     if model.universal_p:
@@ -34,9 +41,10 @@ def _get_params(model: models.LymphMixture) -> np.ndarray:
 def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
     """Set the params of ``model`` from ``params``.
 
-    This function is very similar to the :py:meth:`.models.LymphMixture.set_params`
-    method. Except that it does not accept a dictionary of parameters, but only a 1D
-    array.
+    .. seealso::
+        This function is very similar to the :py:meth:`.models.LymphMixture.set_params`
+        method. Except that it does not accept a dictionary of parameters, but only a 1D
+        array.
     """
     if model.universal_p:
         for comp in model.components:
@@ -51,8 +59,10 @@ def _set_params(model: models.LymphMixture, params: np.ndarray) -> None:
 def expectation(model: models.LymphMixture, params: dict[str, float]) -> np.ndarray:
     """Compute expected value of latent ``model`` variables given the ``params``.
 
-    This marks the E-step of the EM algorithm. The returned expected values are also
-    often called responsibilities.
+    This marks the E-step of the famous `EM algorithm`_. The returned expected values
+    are also often called responsibilities.
+
+    .. _EM algorithm: https://en.wikipedia.org/wiki/Expectation%E2%80%93maximization_algorithm
     """
     model.set_params(**params)
     llhs = model.patient_mixture_likelihoods(log=False, marginalize=False)
@@ -81,7 +91,7 @@ def _neg_complete_component_llh(
     This function is used in the M-step of the EM algorithm.
     """
     model.components[component].set_params(*params)
-    result = - model.complete_data_likelihood(component=component)
+    result = -model.complete_data_likelihood(component=component)
     logger.debug(f"Component {component} with params {params} has llh {result}")
     return result
 
@@ -92,9 +102,11 @@ def maximization(
 ) -> dict[str, float]:
     """Maximize ``model`` params given expectation of ``latent`` variables.
 
-    This is the corresponding M-step to the :py:func:`.expectation` of the EM
-    algorithm. It first maximizes the mixture coefficients analytically and then
+    This is the corresponding M-step to the :py:func:`.expectation` of the
+    `EM algorithm`_. It first maximizes the mixture coefficients analytically and then
     optimizes the model parameters of all components sequentially.
+
+    .. _EM algorithm: https://en.wikipedia.org/wiki/Expectation%E2%80%93maximization_algorithm
     """
     maximized_mixture_coefs = model.infer_mixture_coefs(new_resps=latent)
     model.set_mixture_coefs(maximized_mixture_coefs)
