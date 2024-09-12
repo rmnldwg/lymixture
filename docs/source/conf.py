@@ -24,8 +24,13 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
-    "myst_parser",
+    "myst_nb",
 ]
+
+# MyST settings
+myst_enable_extensions = ["colon_fence", "dollarmath"]
+nb_execution_mode = "auto"
+nb_execution_timeout = 120
 
 # markdown to reST
 source_suffix = [".rst", ".md"]

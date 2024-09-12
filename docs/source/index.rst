@@ -10,8 +10,20 @@ Introduction
     :parser: myst_parser.sphinx_
 
 
-API Documentation
------------------
+Quickstart Tutorial
+-------------------
+
+We provide a notebook in which we generate synthetic data and train a simple
+two-component mixture model on it.
+
+.. toctree::
+    :maxdepth: 2
+
+    quickstart
+
+
+API Reference
+-------------
 
 .. toctree::
     :maxdepth: 2
