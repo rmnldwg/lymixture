@@ -7,13 +7,11 @@ Introduction
 ============
 
 .. include:: ../../README.md
-    :start-line: 3
-    :end-line: 25
     :parser: myst_parser.sphinx_
 
 
-Documentation
--------------
+API Documentation
+-----------------
 
 .. toctree::
     :maxdepth: 2

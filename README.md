@@ -1,12 +1,12 @@
 <img src="https://raw.githubusercontent.com/rmnldwg/lymixture/dev/github-social-card.png" alt="social card" style="width:830px;"/>
 
-# What is `lyMixture`
+## What is `lyMixture`?
 
-Extension to the [`lymph`] package.
+This package is an extension to the [`lymph`] package, which models lymphatic tumor progression in head and neck cancer.
 
-The core idea is to model the different tumor subsites lymphatic metastatic spread in head and neck cancer as a mixture of models as defined in the [`lymph`] package.
+However, different tumor locations/subsites may exhibit different spread patterns. This extension to the original model attempts to model this as a mixture of several components that might represent something like the atomic spread patterns.
 
-This was originally created by [Julian Brönnimann] as part of his Master's thesis in the medical physics research group of Prof. Jan Unkelbach at the University Hospital Zurich.
+This code was originally written by [Julian Brönnimann] as part of his Master's thesis in the medical physics research group of Prof. Jan Unkelbach at the University Hospital Zurich. It was subsequently adapted and extended to match the [`lymph`] API as closely as possible.
 
 [`lymph`]: https://lymph-model.readthedocs.io
 [Julian Brönnimann]: https://github.com/julianbro
