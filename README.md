@@ -1,4 +1,6 @@
-# lyMixture
+<img src="https://raw.githubusercontent.com/rmnldwg/lymixture/dev/github-social-card.png" alt="social card" style="width:830px;"/>
+
+# What is `lyMixture`
 
 Extension to the [`lymph`] package.
 
