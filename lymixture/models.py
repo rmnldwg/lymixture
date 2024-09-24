@@ -1,4 +1,11 @@
-"""Defines how the class wraps the base model and composes the mixture model."""
+"""Provides the :py:class:`LymphMixture` class for wrapping multiple lymph models.
+
+Each component and subgroup of the mixture model is a
+:py:class:`~lymph.models.Unilateral` instance. Its properties, parametrization, and
+data are orchestrated by the :py:class:`LymphMixture` class. It provides the methods
+and computations necessary to use the expectation-maximization algorithm to fit the
+model to data.
+"""
 
 import logging
 import warnings
@@ -127,11 +134,11 @@ class LymphMixture(
         """Get mixture coefficients for the given ``subgroup`` and ``component``.
 
         The mixture coefficients are sliced by the given ``subgroup`` and ``component``
-        which means that if no subgroupd and/or component is given, multiple mixture
+        which means that if no subgroup and/or component is given, multiple mixture
         coefficients are returned.
 
-        If ``normalize`` is set to ``True``, the mixture coefficients are normalized
-        along the component axis before being returned.
+        If ``norm`` is set to ``True``, the mixture coefficients are normalized along
+        the component axis before being returned.
         """
         if getattr(self, "_mixture_coefs", None) is None:
             self._mixture_coefs = self._init_mixture_coefs()
@@ -156,7 +163,8 @@ class LymphMixture(
         the entire model, to one subgroup, to one component, or to one component of one
         subgroup.
 
-        Note that after setting, these coefficients are not normalized.
+        .. note::
+            After setting, these coefficients are not normalized.
         """
         if getattr(self, "_mixture_coefs", None) is None:
             self._mixture_coefs = self._init_mixture_coefs()
@@ -252,6 +260,12 @@ class LymphMixture(
         an iterable of floats otherwise. The argument ``as_flat`` determines whether
         the returned dict is flat or nested.
 
+        .. seealso::
+            In the :py:mod:`lymph` package, the model parameters are also set and get
+            using the :py:meth:`~lymph.types.Model.get_params` and the
+            :py:meth:`~lymph.types.Model.set_params` methods. We tried to keep the
+            interface as similar as possible.
+
         >>> graph_dict = {
         ...     ("tumor", "T"): ["II", "III"],
         ...     ("lnl", "II"): ["III"],
@@ -296,8 +310,13 @@ class LymphMixture(
         provided as positional arguments, they are used up first), as well as the
         mixture coefficients for the subgroups.
 
-        Note:
-        -----
+        .. seealso::
+            In the :py:mod:`lymph` package, the model parameters are also set and get
+            using the :py:meth:`~lymph.types.Model.get_params` and the
+            :py:meth:`~lymph.types.Model.set_params` methods. We tried to keep the
+            interface as similar as possible.
+
+        .. important::
             After setting all parameters, the mixture coefficients are normalized and
             may thus not be the same as the ones provided in the arguments.
 
@@ -405,8 +424,9 @@ class LymphMixture(
         of the model or the expectation values of the latent variables (depending on
         whether or not they are "hardened", see :py:meth:`.harden_responsibilities`).
 
-        Also, like in the :py:meth:`.set_mixtures_coefs` method, the responsibilities
-        are not normalized after setting them.
+        .. note::
+            Also, like in the :py:meth:`.set_mixtures_coefs` method, the
+            responsibilities are not normalized after setting them.
         """
         if isinstance(new_resps, pd.DataFrame):
             new_resps = new_resps.to_numpy()

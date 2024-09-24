@@ -28,8 +28,13 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 test = [
-    "jupyter",
     "pytest",
+]
+docs = [
+    "sphinx",
+    "sphinx-book-theme",
+    "sphinx-autodoc-typehints",
+    "myst-nb",
 ]
 
 [tool.setuptools_scm]

@@ -1,14 +1,20 @@
-"""
+"""A mixture model for lymphatic metastasis in head and neck cancer.
+
 This package defines classes and functions to model lymphatic involvement as a
-mixture of hidden Markov models as hey are implemented in the `lymph-model` package.
+mixture of hidden Markov models as they are implemented in the :py:mod:`lymph` package.
 """
 
 import logging
 
+from lymixture._version import version
+from lymixture.models import LymphMixture
+from lymixture.em import expectation, maximization
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-
-from lymixture.models import LymphMixture
-
-__all__ = ["LymphMixture"]
+__all__ = ["LymphMixture", "expectation", "maximization"]
+__version__ = version
+__author__ = "Roman Ludwig"
+__email__ = "roman.ludwig@usz.ch"
+__uri__ = "https://github.com/rmnldwg/lymixture"
