@@ -197,6 +197,35 @@ def sample_model_params(
 
     return sampler.get_chain(discard=0, thin=1, flat=True)
 
+def density(likelihoods, value):
+    """"Computes the probability density given a patient likelihood"""
+    return np.power(likelihoods, utils.map_to_simplex(value)).prod()
+
+def sample_vers2(model: models.LymphMixture,
+                 num_samples: int,
+                 ) -> np.ndarray:
+    """Sample params of the components of the ``model`` given latent variables.
+
+    The samples are drawn from the complete data log-likelihood of the model.
+    """
+    for likelihood in model.patient_mixture_likelihoods(log = False):
+        samples = []
+        max_density = 1.0  # Set this based on your density function
+
+        while len(samples) < num_samples:
+            # Sample a vector of values from the uniform distribution
+            candidate = np.random.uniform(0, 1, size=dimension)  # Adjust the range based on your distribution
+
+            # Sample a uniform value for acceptance
+            uniform_value = np.random.uniform(0, max_density)
+
+            # Evaluate the density at the candidate
+            if uniform_value < density(candidate):
+                samples.append(map_to_simplex(candidate))
+    model.complete_data_likelihood
+
+    return sampler.get_chain(discard=0, thin=1, flat=True)
+
 
 def complete_samples(
     model: models.LymphMixture,
