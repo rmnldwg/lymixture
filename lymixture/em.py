@@ -235,7 +235,8 @@ def sample_fixed_mixture(model, steps=100, latent=None, filename = 'chain_fixed_
     if latent is None:
         latent = model.get_resps()
     model.set_resps(latent)
-    model.set_mixture_coefs(model.compute_mixture())
+    maximized_mixture_coefs = model.infer_mixture_coefs(new_resps=latent)
+    model.set_mixture_coefs(maximized_mixture_coefs)
     current_params = _get_params(model)
     
     ndim = len(current_params)
@@ -249,6 +250,8 @@ def sample_fixed_mixture(model, steps=100, latent=None, filename = 'chain_fixed_
         starting_points = None
     # Pass model as an additional argument to log_prob_fn
     with Pool() as pool:
+        print(f"Number of cores (workers) used by the emcee sampler: {pool._processes}")
+
         original_sampler = emcee.EnsembleSampler(
             nwalkers, ndim, log_prob_fn_fixed_mixture,
             args=(model,),  # Pass model here
@@ -293,7 +296,7 @@ def sample_model_params(model, steps = 100, latent = None, filename = 'chain_fix
     if latent is None:
         latent = model.get_resps()
     model.set_resps(latent)
-    model.set_mixture_coefs(model.compute_mixture())
+    model.set_mixture_coefs(model.infer_mixture_coefs())
     current_params = list(model.get_params(as_dict = False))
     
     ndim = len(current_params)
