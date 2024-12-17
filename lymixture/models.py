@@ -356,7 +356,8 @@ class LymphMixture(
             for label in self.subgroups:
                 first, args = popfirst(args)
                 value = component_kwargs.get(f"{label}_coef", first)
-                self.set_mixture_coefs(value, component=c, subgroup=label)
+                if value != None:
+                    self.set_mixture_coefs(value, component=c, subgroup=label)
 
         if self.universal_p:
             args = self.set_distribution_params(*args, **global_kwargs)
