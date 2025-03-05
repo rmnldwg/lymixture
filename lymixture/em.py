@@ -91,7 +91,10 @@ def _neg_complete_component_llh(
 
     This function is used in the M-step of the EM algorithm.
     """
-    model.components[component].set_params(*params)
+    try:
+        model.components[component].set_params(*params) #we can set it for all of them here in theory as well. But I am short in time so I will fix this later
+    except ValueError:
+        return np.inf
     result = -model.complete_data_likelihood(component=component)
     logger.debug(f"Component {component} with params {params} has llh {result}")
     return result
