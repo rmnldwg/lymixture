@@ -167,7 +167,7 @@ def log_prob_fn_fixed_mixture(theta, model):
     if np.any(theta < lower_bounds) or np.any(theta > upper_bounds):
         return -np.inf  # Return -infinity if out of bounds
     _set_params(model,theta)
-    return model.likelihood(log=False)
+    return model.likelihood(log=True, use_complete = False)
 
 def log_prob_fn(theta, model):
     """
