@@ -210,8 +210,8 @@ class LymphMixture(
                     np.tile(self.get_mixture_coefs(subgroup=label), (num_patients, 1)),
                 ]
             )
-
-        return np.log(result) if log else result
+        with np.errstate(divide='ignore'):
+            return np.log(result) if log else result
 
     def infer_mixture_coefs(
         self,
@@ -625,8 +625,14 @@ class LymphMixture(
             subgroup=subgroup,
             component=component,
         ).to_numpy()
-        return np.sum(resps * llhs) if log else np.prod(llhs**resps)
-
+        if log:
+            with np.errstate(invalid='ignore'):
+                final_llh = resps * llhs
+            final_llh[np.isnan(final_llh)] = 0
+            return(np.sum(final_llh))
+        else:
+            return np.prod(llhs**resps)
+        
     def likelihood(
         self,
         use_complete: bool = True,
