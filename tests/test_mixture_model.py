@@ -5,9 +5,10 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from lymph.models import Unilateral
+
 from lymixture import LymphMixture
 from lymixture.utils import RESP_COLS
-from lymph.models import Unilateral
 
 from . import fixtures
 
@@ -50,7 +51,7 @@ class TestMixtureModel(fixtures.MixtureModelFixture):
         for subgroup in self.mixture_model.subgroups.values():
             self.assertIn(RESP_COLS, subgroup.patient_data)
             stored_resp = np.vstack(
-                [stored_resp, subgroup.patient_data[RESP_COLS].to_numpy()]
+                [stored_resp, subgroup.patient_data[RESP_COLS].to_numpy()],
             )
         np.testing.assert_array_equal(self.resp, stored_resp)
         stored_resp = self.mixture_model.patient_data[RESP_COLS]
@@ -84,7 +85,9 @@ class DistributionsTestCase(fixtures.MixtureModelFixture):
         self.dists = {
             "early": fixtures.create_random_dist("frozen", max_time=10, rng=self.rng),
             "late": fixtures.create_random_dist(
-                "parametric", max_time=10, rng=self.rng
+                "parametric",
+                max_time=10,
+                rng=self.rng,
             ),
         }
         self.mixture_model.set_distribution("early", self.dists["early"])
@@ -99,8 +102,8 @@ class DistributionsTestCase(fixtures.MixtureModelFixture):
         )
         self.assertTrue(
             np.all(
-                self.dists["early"] == self.mixture_model.get_distribution("early").pmf
-            )
+                self.dists["early"] == self.mixture_model.get_distribution("early").pmf,
+            ),
         )
 
 
@@ -119,7 +122,9 @@ class GetAndSetParamsTestCase(fixtures.MixtureModelFixture, unittest.TestCase):
         self.dists = {
             "early": fixtures.create_random_dist("frozen", max_time=10, rng=self.rng),
             "late": fixtures.create_random_dist(
-                "parametric", max_time=10, rng=self.rng
+                "parametric",
+                max_time=10,
+                rng=self.rng,
             ),
         }
         self.mixture_model.set_distribution("early", self.dists["early"])
@@ -148,10 +153,14 @@ class LikelihoodsTestCase(fixtures.MixtureModelFixture, unittest.TestCase):
         self.mixture_model.set_modality("max_llh", spec=1.0, sens=1.0)
         self.dists = {
             "early": fixtures.create_random_dist(
-                "parametric", max_time=10, rng=self.rng
+                "parametric",
+                max_time=10,
+                rng=self.rng,
             ),
             "late": fixtures.create_random_dist(
-                "parametric", max_time=10, rng=self.rng
+                "parametric",
+                max_time=10,
+                rng=self.rng,
             ),
         }
         self.mixture_model.set_distribution("early", self.dists["early"])

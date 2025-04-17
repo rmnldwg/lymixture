@@ -7,8 +7,8 @@ mixture of hidden Markov models as they are implemented in the :py:mod:`lymph` p
 import logging
 
 from lymixture._version import version
-from lymixture.models import LymphMixture
 from lymixture.em import expectation, maximization
+from lymixture.models import LymphMixture
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

@@ -1,12 +1,10 @@
-"""
-Generate synthetic data for testing.
-"""
+"""Generate synthetic data for testing."""
 
 import argparse
 from collections import namedtuple
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
-from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
