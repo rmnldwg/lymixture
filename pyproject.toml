@@ -22,7 +22,6 @@ dependencies = [
     "lymph-model >= 1.2",
     # I think these packages should not be depedencies...
     "emcee",
-    "lyscripts >= 1.0.0.a0",
 ]
 dynamic = ["version"]
 
@@ -48,5 +47,7 @@ include-package-data = true
 [tool.setuptools.dynamic]
 version = {attr = "lymixture._version.version"}
 
-[tool.ruff]
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["D409", "D203", "D213", "B028", "G004"]
 exclude = ["*.ipynb"]
