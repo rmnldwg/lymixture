@@ -66,6 +66,13 @@ def normalize(
     Beyond normalizing, this function also sets values that are close to zero to the
     exact value of zero. For this, it passes all extra keyword arguments to numpy's
     ``isclose`` function.
+
+    >>> normalize(np.array([0.1, 0.2, 0.7]), axis=0)    # doctest: +NORMALIZE_WHITESPACE
+    array([0.1, 0.2, 0.7])
+    >>> normalize(np.array([1e-20, 0.3, 0.7]), axis=0)  # doctest: +NORMALIZE_WHITESPACE
+    array([0. , 0.3, 0.7])
+    >>> normalize(np.array([1e-20, 0.3, 0.3]), axis=0)  # doctest: +NORMALIZE_WHITESPACE
+    array([0. , 0.5, 0.5])
     """
     normalized = values / np.sum(values, axis=axis)
     small_idx = np.isclose(normalized, 0.0, **isclose_kwargs)
