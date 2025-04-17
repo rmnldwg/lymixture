@@ -5,6 +5,7 @@ import unittest
 import warnings
 
 import pandas as pd
+
 from lymixture import models, utils
 
 

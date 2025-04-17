@@ -49,4 +49,4 @@ ignore = [
     "PLR0913",
     "FIX002",
 ]
-exclude = ["*.ipynb"]
+exclude = ["*.ipynb", "tests/*"]
