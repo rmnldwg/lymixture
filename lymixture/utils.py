@@ -56,9 +56,21 @@ def map_to_real(from_simplex: np.ndarray | list[float]) -> np.ndarray:
     return np.log(from_simplex[1:] * normalizer)
 
 
-def normalize(values: np.ndarray, axis: int) -> np.ndarray:
-    """Normalize ``values`` to sum to 1 along ``axis``."""
-    return values / np.sum(values, axis=axis)
+def normalize(
+    values: np.ndarray,
+    axis: int,
+    **isclose_kwargs: float | bool,
+) -> np.ndarray:
+    """Normalize ``values`` to sum to 1 along ``axis``.
+
+    Beyond normalizing, this function also sets values that are close to zero to the
+    exact value of zero. For this, it passes all extra keyword arguments to numpy's
+    ``isclose`` function.
+    """
+    normalized = values / np.sum(values, axis=axis)
+    small_idx = np.isclose(normalized, 0.0, **isclose_kwargs)
+    normalized[small_idx] = 0.0
+    return normalized / np.sum(normalized, axis=axis)
 
 
 def harden(values: np.ndarray, axis: int) -> np.ndarray:
