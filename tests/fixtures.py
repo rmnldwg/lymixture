@@ -9,9 +9,10 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 import scipy as sp
+from lymph import diagnosis_times, modalities
+
 from lymixture import LymphMixture
 from lymixture.utils import map_to_simplex
-from lymph import diagnosis_times, modalities
 
 SIMPLE_SUBSITE = ("tumor", "1", "simple_subsite")
 SUBSITE = ("tumor", "1", "subsite")

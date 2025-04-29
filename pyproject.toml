@@ -1,41 +1,27 @@
 [build-system]
-requires = [
-    "setuptools >= 61.0.0",
-    "setuptools_scm >= 7.0.0",
-    "wheel",
-]
+requires = ["setuptools >= 61.0.0", "setuptools_scm >= 7.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "lymixture"
 description = "Package to model lymphatic spread sa mixture of HMMs as implemented in the `lymph-model` package."
-authors = [
-    {name = "Julian Brönnimann"}
-]
+authors = [{ name = "Julian Brönnimann" }]
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = { text = "MIT" }
 dependencies = [
     "numpy",
     "scipy",
     "pandas",
-    "lymph-model >= 1.2",
     # I think these packages should not be depedencies...
     "emcee",
-    "lyscripts >= 1.0.0.a0",
+    "lymph-model>=1.3.3",
 ]
 dynamic = ["version"]
 
 [project.optional-dependencies]
-test = [
-    "pytest",
-]
-docs = [
-    "sphinx",
-    "sphinx-book-theme",
-    "sphinx-autodoc-typehints",
-    "myst-nb",
-]
+test = ["pytest"]
+docs = ["sphinx", "sphinx-book-theme", "sphinx-autodoc-typehints", "myst-nb"]
 
 [tool.setuptools_scm]
 write_to = "lymixture/_version.py"
@@ -46,7 +32,26 @@ packages = ["lymixture"]
 include-package-data = true
 
 [tool.setuptools.dynamic]
-version = {attr = "lymixture._version.version"}
+version = { attr = "lymixture._version.version" }
 
-[tool.ruff]
-exclude = ["*.ipynb"]
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D409",
+    "D203",
+    "D213",
+    "B028",
+    "G004",
+    "PLR2004",
+    "ANN003",
+    "TD002",
+    "TD003",
+    "PLR0913",
+    "FIX002",
+]
+exclude = ["*.ipynb", "tests/*"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::pandas.errors.PerformanceWarning"
+]
