@@ -17,4 +17,4 @@ __all__ = ["LymphMixture", "expectation", "maximization"]
 __version__ = version
 __author__ = "Roman Ludwig"
 __email__ = "roman.ludwig@usz.ch"
-__uri__ = "https://github.com/rmnldwg/lymixture"
+__uri__ = "https://github.com/lycosystem/lymixture"

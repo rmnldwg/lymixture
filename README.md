@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/rmnldwg/lymixture/dev/github-social-card.png" alt="social card" style="width:830px;"/>
+<img src="https://raw.githubusercontent.com/lycosystem/lymixture/dev/github-social-card.png" alt="social card" style="width:830px;"/>
 
 ## What is `lyMixture`?
 
@@ -16,7 +16,7 @@ This code was originally written by [Julian Brönnimann] as part of his Master's
 At the moment, you need to install the package from source. To do so, first clone the repository and `cd` into it:
 
 ```
-git clone https://github.com/rmnldwg/lymixture
+git clone https://github.com/lycosystem/lymixture
 cd lymixture
 ```
 
